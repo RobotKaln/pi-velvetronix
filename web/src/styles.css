@@ -94,6 +94,7 @@ input[type="checkbox"] { width: 1.25rem; height: 1.25rem; accent-color: var(--ac
   padding-top: max(0.5rem, env(safe-area-inset-top));
 }
 .brand { font-weight: 700; letter-spacing: 0.04em; color: var(--accent); margin-bottom: 0.35rem; }
+.brand-more { margin-left: 0.3em; }
 main { max-width: 1120px; margin: 0 auto; padding: 1rem; }
 .screen { display: grid; gap: 1rem; max-width: 960px; margin: 0 auto; min-width: 0; }
 .screen-control { max-width: none; }
@@ -580,7 +581,6 @@ details summary { cursor: pointer; color: var(--accent); margin-top: 0.5rem; }
   .top { display: contents; }
   .brand, .tabs, .head-tools, .top .statusbar { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
   .brand { order: 0; }
-  .brand-more { margin-left: 0.3em; }
   .tabs { order: 1; }
   .head-tools { order: 2; padding: 0 0.5rem; padding-top: env(safe-area-inset-top); }
   .head-tools[hidden] { display: none !important; }
