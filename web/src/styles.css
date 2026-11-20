@@ -574,20 +574,37 @@ details summary { cursor: pointer; color: var(--accent); margin-top: 0.5rem; }
   .knob-label { font-size: 0.625rem; letter-spacing: 0.04em; }
 }
 
+/* --- tablet and up: one header line with brand, tabs and status dots --- */
+@media (min-width: 700px) {
+  .app { display: flex; flex-wrap: wrap; align-items: stretch; }
+  .top { display: contents; }
+  .brand, .tabs, .top .statusbar { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+  .brand { margin: 0; padding: 0 1rem; padding-top: env(safe-area-inset-top); }
+  .tabs { position: static; flex: 0 1 auto; align-items: flex-end; padding: 0; padding-top: env(safe-area-inset-top); }
+  .tab { padding: 0.55rem 0.7rem 0.45rem; }
+  /* Takes the rest of the line (or a whole line if it wraps); the dots sit at the right. */
+  .top .statusbar { order: 3; flex: 1 0 auto; flex-direction: column; justify-content: center; align-items: flex-end; padding: 0 1rem; padding-top: env(safe-area-inset-top); }
+  .top .chips { flex-wrap: nowrap; }
+  .top .chip { flex: none; }
+  .top .chip-value, .top .chip-addr, .top .chip-more { display: none; }
+  .stale { margin: 0; }
+  main { flex: 0 0 100%; order: 4; }
+}
+@media (min-width: 700px) and (max-width: 900px) {
+  .tab-more { display: none; }
+  .brand { padding: 0 0.75rem; }
+  .tab { padding-inline: 0.5rem; }
+  .top .statusbar { padding: 0 0.75rem; }
+  .top .chips { gap: 0.3rem; }
+  .top .chip { padding: 0.1rem 0.45rem; }
+}
+
 /* --- tablet (iPad 11": 834x1194 portrait, 1194x834 landscape): amp and pedals fit on one screen --- */
 @media (min-width: 700px) and (max-width: 1400px) {
-  .top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1rem; padding: 0.35rem 1rem 0.25rem; }
-  .brand { margin: 0; }
-  /* Brand and status in one line; the status chips scroll sideways instead of wrapping. */
-  .top { flex-wrap: nowrap; }
-  .top .statusbar { flex: 1; min-width: 0; }
-  .top .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
-  .top .chip { flex: none; }
-  .tabs { padding-top: 0.1rem; }
-  .tab { padding: 0.35rem 0.7rem; }
   main { padding: 0.6rem 0.9rem; }
   .screen { gap: 0.6rem; }
-  .seg-btn { min-height: 2.25rem; }
+  .seg-btn { min-height: 2.25rem; padding-block: 0.15rem; }
+  .seg-opts { padding: 2px; }
   .amp-panel { padding: 0.75rem 0.9rem 0.8rem; }
   .logo-vox { font-size: 1.6rem; }
   .bank, .ch { min-height: 3rem; padding: 0.25rem 0.3rem; }

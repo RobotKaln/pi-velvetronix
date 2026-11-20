@@ -12,6 +12,8 @@ import { createWifi } from "./wifi";
 interface Screen {
   id: string;
   title: string;
+  /** Tail of the tab title hidden in the compact header. */
+  more?: string;
   view: { el: HTMLElement; render(): void; show?(): void; hide?(): void };
 }
 
@@ -21,10 +23,12 @@ export function createShell(ctx: Ctx): { el: HTMLElement; render(): void; destro
     { id: "ovladani", title: "Ovládání", view: createControl(ctx) },
     { id: "pisnicky", title: "Písničky", view: createSongs(ctx) },
     { id: "wifi", title: "Wi-Fi", view: createWifi(ctx) },
-    { id: "aktualizace", title: "Aktualizace firmwaru", view: createUpdate(ctx) },
+    { id: "aktualizace", title: "Aktualizace", more: " firmwaru", view: createUpdate(ctx) },
     { id: "info", title: "Info", view: createInfo(ctx) },
   ];
-  const tabs = screens.map((s) => h("a", { href: `#${s.id}`, class: "tab" }, s.title));
+  const tabs = screens.map((s) =>
+    h("a", { href: `#${s.id}`, class: "tab" }, s.title, ...(s.more ? [h("span", { class: "tab-more" }, s.more)] : [])),
+  );
   const main = h("main", null, ...screens.map((s) => s.view.el));
   const el = h(
     "div",
