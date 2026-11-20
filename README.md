@@ -19,7 +19,7 @@ telefon / notebook ──Wi-Fi── Pi Zero 2 W ──USB (OTG)── VOX VT100
   s footswitchem) a **Technický** (posuvníky). Přepínač názvů **originál / z komba**
   (např. „Marshall JCM800“ vs „BRIT 800“). Předlohy pedálů a některých zesilovačů VOX oficiálně
   neuvádí; nejisté názvy jsou označené „~“ a podtržené, zdroje v `web/research/`.
-- Záložka **Písničky**: 40 přibližných zvuků, hlavně punk (punk, pop-punk, skate-punk,
+- Záložka **Písničky**: 41 přibližných zvuků, hlavně punk (punk, pop-punk, skate-punk,
   hardcore, ska-punk, český punk) a pár rockových klasik. **Zahrát** nastaví zvuk v kombu
   jen živě, nemění hlasitost programu a nic neukládá. Uložit jde pak tlačítkem Uložit.
 - Ovládat může vždy jen jeden prohlížeč. Další dostane hlášku „Ovládání je otevřené v jiném
