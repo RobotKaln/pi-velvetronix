@@ -2,7 +2,7 @@
 // web/research/songs.json (2026-10-19). Values are raw amp values (0..100 knobs, mHz, ms) per docs/protocol.md §5;
 // there is deliberately no program VOLUME anywhere. Gear sources per preset are in web/research/songs.md.
 
-export const GENRES = ["punk","pop-punk","skate-punk","hardcore","ska-punk","czech-punk","rock"] as const;
+export const GENRES = ["punk","pop-punk","skate-punk","hardcore","ska-punk","czech-punk","rock","tone-room"] as const;
 export type Genre = (typeof GENRES)[number];
 
 export interface SongEffect {
@@ -20,6 +20,8 @@ export interface SongPreset {
   description: string;
   /** Gear source for this preset; null = set from the general style of the band. */
   source: string | null;
+  /** Link text for source (default "Zdroj vybavení"), or the note shown when there is no link. */
+  sourceNote?: string;
   amp: {
     model: number;
     gain: number; treble: number; middle: number; bass: number; presence: number; resonance: number;

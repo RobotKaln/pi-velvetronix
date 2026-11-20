@@ -20,6 +20,11 @@ aplikace VOX Tone Room.
 - **Písničky.** 41 přibližných zvuků slavných písniček, hlavně punk (punk, pop-punk, skate-punk,
   hardcore, ska-punk, český punk) a rockové klasiky, např. Seven Nation Army. **Zahrát** nastaví
   zvuk v kombu jen živě, nemění hlasitost programu a nic neukládá.
+- **Presety z Tone Room (.vtxprog).** Žánr **Tone Room** obsahuje 59 presetů od komunity
+  (Arctic Monkeys, Foo Fighters, Queen, QOTSA, Slipknot, The Strokes…) ze souborů
+  [marcosmoura/toneroom-presets](https://github.com/marcosmoura/toneroom-presets) (licence Beerware).
+  Vlastní soubor `.vtxprog` z aplikace VOX Tone Room jde nahrát tlačítkem **Nahrát soubor .vtxprog**
+  a jeho programy zahrát nebo uložit do kanálu.
 - **Ukládání do kanálů.** Zvuk jde uložit pod vlastním jménem (max. 16 znaků) do A1–B4. Kombo
   zápis potvrdí a aplikace ho ověří zpětným přečtením.
 - **Víc ovladačů najednou, všechno živě.** Kombo může současně ovládat až 8 oken: tablet,
