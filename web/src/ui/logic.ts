@@ -26,7 +26,7 @@ export function controlGate(g: GateInput): Gate {
   if (g.updating) return off("Probíhá aktualizace, ovládání je pozastavené.");
   switch (g.ws) {
     case "replaced": return off(`${REPLACED_TEXT}.`, false, true);
-    case "watching": return off(`${WATCHING_TEXT}. Jeho změny vidíš živě. Až skončí, ovládání se vrátí sem.`);
+    case "watching": return off(`${WATCHING_TEXT}. Změny vidíš živě. Až se některé zavře, ovládání se vrátí sem.`);
     case "idle":
     case "connecting": return off("Připojuji se k ovladači…");
     case "waiting": return off("Spojení s ovladačem je přerušené.", false, true);

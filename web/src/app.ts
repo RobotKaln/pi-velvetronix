@@ -54,7 +54,7 @@ export function runApp(root: HTMLElement, api: Api, ws: WsTransport): void {
     changed();
   });
   ws.onError((e) => toast(ampErrorText(e.code)));
-  ws.onEcho((f) => client.observeHost(f));
+  ws.onEcho((f) => client.peerFrame(f));
   client.onState((s) => {
     data.vox = s;
     changed();

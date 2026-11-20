@@ -1,5 +1,5 @@
-// Package bridge owns the amp's rawmidi port: discovery, identity check, a single
-// controlling client and a bounded write queue.
+// Package bridge owns the amp's rawmidi port: discovery, identity check, up to
+// MaxControllers controlling clients sharing one serialized write queue, and observers.
 package bridge
 
 import (
@@ -36,6 +36,10 @@ const (
 	queueSize       = 32
 	frameBufferSize = 64
 	readBufferSize  = 4096
+	// MaxControllers is how many clients may control the amp at once.
+	MaxControllers = 8
+	// replyTimeout bounds how long one client's request holds the queue (client timeouts are 1-2 s).
+	replyTimeout = 2 * time.Second
 )
 
 var deviceInquiry = []byte{0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7}
@@ -81,8 +85,12 @@ type Bridge struct {
 
 	mu     sync.Mutex
 	status AmpStatus
-	queue  chan []byte // nil while no port is open
-	ctrl   *Controller
+	queue  chan outFrame // nil while no port is open
+	ctrls  []*Controller // oldest first
+	// pending is the controller whose request was written last and is not answered yet;
+	// the amp's reply goes to it alone. replied is closed when the reply arrives.
+	pending *Controller
+	replied chan struct{}
 	paused bool
 	subs   map[chan AmpStatus]struct{}
 	obs    map[*Observer]struct{}
@@ -174,8 +182,8 @@ func (b *Bridge) serve(ctx context.Context, port midi.Port, st AmpStatus) {
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
 
-	queue := make(chan []byte, queueSize)
-	queue <- deviceInquiry
+	queue := make(chan outFrame, queueSize)
+	queue <- outFrame{data: deviceInquiry}
 	b.mu.Lock()
 	b.queue = queue
 	b.mu.Unlock()
@@ -189,10 +197,32 @@ func (b *Bridge) serve(ctx context.Context, port midi.Port, st AmpStatus) {
 			case <-ctx.Done():
 				return
 			case f := <-queue:
-				if _, err := port.Write(f); err != nil {
+				var replied chan struct{}
+				if f.from != nil {
+					// Requests from several controllers are answered strictly in turn (ACK/NAK
+					// or data), so only one is outstanding and its reply can be routed back.
+					replied = make(chan struct{})
+					b.mu.Lock()
+					b.pending, b.replied = f.from, replied
+					b.mu.Unlock()
+				}
+				if _, err := port.Write(f.data); err != nil {
 					cancel(fmt.Errorf("write: %w", err))
 					return
 				}
+				if replied == nil {
+					continue
+				}
+				select {
+				case <-replied:
+				case <-time.After(replyTimeout):
+				case <-ctx.Done():
+				}
+				b.mu.Lock()
+				if b.replied == replied {
+					b.pending, b.replied = nil, nil
+				}
+				b.mu.Unlock()
 			}
 		}
 	})
@@ -206,7 +236,7 @@ loop:
 			break loop
 		case <-tick.C:
 			if b.Status().State == StateDetected {
-				b.enqueue(deviceInquiry)
+				b.enqueue(outFrame{data: deviceInquiry})
 			}
 		}
 	}
@@ -245,14 +275,17 @@ func (b *Bridge) fromAmp(frame []byte) {
 		b.setStatusLocked(st)
 		b.log.Info("amp identified", "identity", st.Identity)
 	}
-	b.observeLocked(ObservedFrame{Data: frame})
-	if b.ctrl == nil {
+	f := ObservedFrame{Data: frame}
+	b.observeLocked(f)
+	if b.pending != nil && midi.IsReply(frame) {
+		b.pending.deliverLocked(f)
+		close(b.replied)
+		b.pending, b.replied = nil, nil
 		return
 	}
-	select {
-	case b.ctrl.frames <- frame:
-	default:
-		b.log.Warn("controller too slow, dropping amp frame", "len", len(frame))
+	// Changes made on the amp's panel (and replies nobody waits for) go to every controller.
+	for _, c := range b.ctrls {
+		c.deliverLocked(f)
 	}
 }
 
@@ -269,13 +302,13 @@ type Observer struct {
 	freed  chan struct{}
 }
 
-// Observe registers a read-only watcher. Its Freed channel is closed once no controller is
-// attached (at once if there is none), so the watcher can try to become the controller.
+// Observe registers a read-only watcher. Its Freed channel is closed once a controller slot
+// is free (at once if one is), so the watcher can try to become a controller.
 func (b *Bridge) Observe() *Observer {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	o := &Observer{b: b, frames: make(chan ObservedFrame, frameBufferSize), freed: make(chan struct{})}
-	if b.ctrl == nil {
+	if len(b.ctrls) < MaxControllers {
 		close(o.freed)
 		return o
 	}
@@ -286,7 +319,7 @@ func (b *Bridge) Observe() *Observer {
 // Frames delivers amp frames and echoes of the controller's frames.
 func (o *Observer) Frames() <-chan ObservedFrame { return o.frames }
 
-// Freed is closed when the controller slot becomes free.
+// Freed is closed when a controller slot becomes free.
 func (o *Observer) Freed() <-chan struct{} { return o.freed }
 
 // Close unregisters the observer.
@@ -313,7 +346,13 @@ func (b *Bridge) freeObserversLocked() {
 	}
 }
 
-func (b *Bridge) enqueue(frame []byte) error {
+// outFrame is a frame for the amp; from is the controller that sent it (nil: the bridge itself).
+type outFrame struct {
+	data []byte
+	from *Controller
+}
+
+func (b *Bridge) enqueue(frame outFrame) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.queue == nil {
@@ -380,31 +419,45 @@ func (b *Bridge) SetPaused(p bool) {
 	b.paused = p
 }
 
-// Attach makes the caller the controlling client. If a controller is already active, ok is
-// false unless it has the same non-empty owner key or takeover is set: then the new one takes
-// over and the old one's Replaced channel is closed (Taken reports which of the two it was).
-func (b *Bridge) Attach(owner string, takeover bool) (c *Controller, ok bool) {
+// Attach adds a controlling client. Up to MaxControllers may control the amp at once; when
+// all slots are taken, ok is false unless takeover is set: then the oldest controller is
+// dropped and its Replaced channel closed.
+func (b *Bridge) Attach(takeover bool) (c *Controller, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.ctrl != nil {
-		same := owner != "" && b.ctrl.owner == owner
-		if !same && !takeover {
+	if len(b.ctrls) >= MaxControllers {
+		if !takeover {
 			return nil, false
 		}
-		b.ctrl.taken = !same
-		close(b.ctrl.replaced)
+		old := b.ctrls[0]
+		b.ctrls = b.ctrls[1:]
+		close(old.replaced)
 	}
-	b.ctrl = &Controller{b: b, owner: owner, frames: make(chan []byte, frameBufferSize), replaced: make(chan struct{})}
-	return b.ctrl, true
+	c = &Controller{b: b, frames: make(chan ObservedFrame, frameBufferSize), replaced: make(chan struct{})}
+	b.ctrls = append(b.ctrls, c)
+	return c, true
 }
 
-// Controller is the single client allowed to talk to the amp.
+// Controllers returns how many clients control the amp.
+func (b *Bridge) Controllers() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.ctrls)
+}
+
+// Controller is one client allowed to talk to the amp.
 type Controller struct {
 	b        *Bridge
-	owner    string
-	frames   chan []byte
+	frames   chan ObservedFrame
 	replaced chan struct{}
-	taken    bool // set before replaced is closed
+}
+
+func (c *Controller) deliverLocked(f ObservedFrame) {
+	select {
+	case c.frames <- f:
+	default:
+		c.b.log.Warn("controller too slow, dropping frame", "len", len(f.Data), "echo", f.Echo)
+	}
 }
 
 // Send validates a client frame and queues it for the amp.
@@ -423,14 +476,21 @@ func (c *Controller) Send(kind byte, frame []byte) error {
 		return ErrAmpDisconnected
 	}
 	select {
-	case b.queue <- append([]byte(nil), frame...):
+	case b.queue <- outFrame{data: append([]byte(nil), frame...), from: c}:
 	default:
 		return ErrQueueFull
 	}
 	if kind == 1 {
 		b.log.Info(saveMessage(fn, frame))
 	}
-	b.observeLocked(ObservedFrame{Echo: true, Data: append([]byte(nil), frame...)})
+	// The other controllers and the observers see what this one changes.
+	echo := ObservedFrame{Echo: true, Data: append([]byte(nil), frame...)}
+	b.observeLocked(echo)
+	for _, o := range b.ctrls {
+		if o != c {
+			o.deliverLocked(echo)
+		}
+	}
 	return nil
 }
 
@@ -445,23 +505,23 @@ func saveMessage(fn int, frame []byte) string {
 	}
 }
 
-// Frames delivers complete frames received from the amp.
-func (c *Controller) Frames() <-chan []byte { return c.frames }
+// Frames delivers the amp's replies to this controller's requests, the amp's own change
+// reports, and (Echo) the frames the other controllers send.
+func (c *Controller) Frames() <-chan ObservedFrame { return c.frames }
 
-// Replaced is closed when a new controller took over (same owner key or takeover).
+// Replaced is closed when a takeover dropped this controller.
 func (c *Controller) Replaced() <-chan struct{} { return c.replaced }
-
-// Taken reports, once Replaced is closed, whether another session took over (takeover)
-// rather than the same session.
-func (c *Controller) Taken() bool { return c.taken }
 
 // Detach releases the controller slot.
 func (c *Controller) Detach() {
 	b := c.b
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.ctrl == c {
-		b.ctrl = nil
-		b.freeObserversLocked()
+	for i, o := range b.ctrls {
+		if o == c {
+			b.ctrls = append(b.ctrls[:i:i], b.ctrls[i+1:]...)
+			b.freeObserversLocked()
+			return
+		}
 	}
 }

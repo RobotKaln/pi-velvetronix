@@ -24,8 +24,8 @@ export type ConnState =
   /** Another tab or window of this session took over; no automatic reconnect until retry(). */
   | { kind: "replaced" }
   /**
-   * Another browser or the MCP server is the controller (busy or taken over). The socket watches its
-   * traffic read-only (?watch=1) and becomes the controller again once the server says "free".
+   * All controller slots are taken (busy) or a takeover dropped us. The socket watches the traffic
+   * read-only (?watch=1) and becomes a controller again once the server says "free".
    */
   | { kind: "watching" };
 
@@ -100,7 +100,7 @@ export class WsTransport implements Transport {
     this.frameCbs.push(cb);
   }
 
-  /** Frames the other controller sent to the amp (watch mode only). */
+  /** Frames another controller (tab, browser, MCP server) sent to the amp. */
   onEcho(cb: (f: Uint8Array) => void): void {
     this.echoCbs.push(cb);
   }
@@ -179,7 +179,7 @@ export class WsTransport implements Transport {
       const b = new Uint8Array(data);
       if (b.length < 2) return;
       if (b[0] === KIND_NORMAL) for (const cb of this.frameCbs) cb(b.slice(1));
-      else if (b[0] === KIND_ECHO && this.watch) for (const cb of this.echoCbs) cb(b.slice(1));
+      else if (b[0] === KIND_ECHO) for (const cb of this.echoCbs) cb(b.slice(1));
       return;
     }
     if (typeof data !== "string") return;

@@ -65,7 +65,7 @@ export function ampStateLabel(state: AmpConnState): string {
 }
 
 export const REPLACED_TEXT = "Ovládání převzala jiná karta nebo okno tohoto prohlížeče";
-export const WATCHING_TEXT = "Kombo teď ovládá někdo jiný (jiný prohlížeč nebo Claude přes MCP)";
+export const WATCHING_TEXT = "Kombo teď ovládá nejvíc oken najednou (8)";
 
 export function wsLabel(s: ConnState): string {
   switch (s.kind) {
@@ -74,7 +74,7 @@ export function wsLabel(s: ConnState): string {
     case "open": return "připojeno";
     case "waiting": return `odpojeno, zkusím znovu za ${Math.ceil(s.retryInMs / 1000)} s`;
     case "replaced": return REPLACED_TEXT;
-    case "watching": return "sleduji jiný ovladač";
+    case "watching": return "jen sleduji (plno)";
   }
 }
 

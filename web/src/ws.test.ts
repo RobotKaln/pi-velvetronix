@@ -199,13 +199,13 @@ describe("WsTransport", () => {
     expect(sockets.length).toBe(2);
   });
 
-  it("watches after {t:taken} + 4003 and delivers echo frames only while watching", () => {
+  it("delivers other controllers' frames, and watches after {t:taken} + 4003", () => {
     connect();
     const echoes: number[][] = [];
     const frames: number[][] = [];
     t.onEcho((f) => echoes.push([...f]));
     t.onFrame((f) => frames.push([...f]));
-    last().binary([0x02, 0xf0, 0xf7]); // not watching: ignored
+    last().binary([0x02, 0xf0, 0x00, 0xf7]); // also while controlling
     last().text({ t: "taken" });
     last().serverClose(TAKEN_CLOSE_CODE);
     expect(t.connState.kind).toBe("watching");
@@ -214,7 +214,7 @@ describe("WsTransport", () => {
     last().text({ t: "watching" });
     last().binary([0x02, 0xf0, 0x01, 0xf7]);
     last().binary([0x00, 0xf0, 0x02, 0xf7]);
-    expect(echoes).toEqual([[0xf0, 0x01, 0xf7]]);
+    expect(echoes).toEqual([[0xf0, 0x00, 0xf7], [0xf0, 0x01, 0xf7]]);
     expect(frames).toEqual([[0xf0, 0x02, 0xf7]]);
     // A watch socket that drops reconnects in watch mode.
     last().serverClose(1006);

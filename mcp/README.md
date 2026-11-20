@@ -8,9 +8,8 @@ Nástroje: `vox_status`, `vox_catalog`, `vox_set_sound` (živě, nic neukládá,
 `vox_list_songs`, `vox_play_song`, `vox_select_program`, `vox_save_program` (přepíše slot),
 `vox_disconnect`.
 
-Ovládat může vždy jen jeden ovladač. Server se připojuje s `?takeover=1`, takže ovládání převezme
-i od otevřeného prohlížeče. Prohlížeč mezitím přejde do režimu sledování a změny vidí živě.
-Po 8 s bez volání se server odpojí a prohlížeč ovládání zase převezme.
+Kombo může ovládat až 8 oken a MCP server najednou. Otevřené stránky vidí změny z MCP živě.
+Po 8 s bez volání se server odpojí. Když je plno, `?takeover=1` odpojí nejstarší okno.
 
 ```sh
 cd mcp && npm ci && npm run build

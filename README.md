@@ -22,8 +22,8 @@ telefon / notebook ──Wi-Fi── Pi Zero 2 W ──USB (OTG)── VOX VT100
 - Záložka **Písničky**: 41 přibližných zvuků, hlavně punk (punk, pop-punk, skate-punk,
   hardcore, ska-punk, český punk) a pár rockových klasik. **Zahrát** nastaví zvuk v kombu
   jen živě, nemění hlasitost programu a nic neukládá. Uložit jde pak tlačítkem Uložit.
-- Ovládat může vždy jen jeden prohlížeč. Další dostane hlášku „Ovládání je otevřené v jiném
-  prohlížeči“.
+- Ovládat může najednou až 8 oken (záložky, prohlížeče, MCP server v `mcp/`). Každé vidí živě,
+  co mění ostatní i co se otočí přímo na kombu.
 - Power Level je na kombu analogový a dálkově ovládat nejde.
 - Podklady: protokol [docs/protocol.md](docs/protocol.md) (z oficiální „Valvetronix X MIDI
   Implementation v1.0“ a projektu [vox-amp-librarian](https://github.com/tmarsteel/vox-amp-librarian),
