@@ -3,7 +3,10 @@ import { VoxClient } from "./protocol/client";
 import { msg } from "./protocol/messages";
 import { decodeProgram } from "./protocol/program";
 import { hex, VECTOR_A_STRUCT } from "./protocol/testutil";
-import { backoffMs, BUSY_CLOSE_CODE, PING_INTERVAL_MS, REPLACED_CLOSE_CODE, WsTransport, type ConnState, type SocketLike } from "./ws";
+import {
+  backoffMs, BUSY_CLOSE_CODE, PING_INTERVAL_MS, REPLACED_CLOSE_CODE, TAKEN_CLOSE_CODE, TAKEN_RETRY_MS, WsTransport,
+  type ConnState, type SocketLike,
+} from "./ws";
 
 class FakeSocket implements SocketLike {
   binaryType: BinaryType = "blob";
@@ -186,6 +189,39 @@ describe("WsTransport", () => {
     expect(t.connState.kind).toBe("replaced");
     vi.advanceTimersByTime(60_000);
     expect(sockets.length).toBe(2);
+  });
+
+  it("after {t:taken} + 4003 keeps asking every TAKEN_RETRY_MS while busy, then reconnects", () => {
+    connect();
+    last().text({ t: "taken" });
+    last().serverClose(TAKEN_CLOSE_CODE);
+    expect(t.connState.kind).toBe("taken");
+    vi.advanceTimersByTime(TAKEN_RETRY_MS);
+    expect(sockets.length).toBe(2);
+    last().text({ t: "busy" });
+    last().serverClose(BUSY_CLOSE_CODE);
+    expect(t.connState.kind).toBe("taken"); // the taker still holds the slot
+    vi.advanceTimersByTime(TAKEN_RETRY_MS);
+    expect(sockets.length).toBe(3);
+    last().text({ t: "hello", version: "x" });
+    expect(t.connState.kind).toBe("open");
+    // Once back, busy is plain busy again (another browser), with no automatic retry.
+    last().serverClose(1006);
+    vi.advanceTimersByTime(1000);
+    last().serverClose(BUSY_CLOSE_CODE);
+    expect(t.connState.kind).toBe("busy");
+    const n = sockets.length;
+    vi.advanceTimersByTime(60_000);
+    expect(sockets.length).toBe(n);
+  });
+
+  it("stop() cancels the taken retry", () => {
+    connect();
+    last().serverClose(TAKEN_CLOSE_CODE);
+    t.stop();
+    vi.advanceTimersByTime(60_000);
+    expect(sockets.length).toBe(1);
+    expect(t.connState.kind).toBe("idle");
   });
 
   it("does not report busy for a later normal disconnect after retry", () => {

@@ -45,12 +45,13 @@ type Controller interface {
 	Send(kind byte, frame []byte) error
 	Frames() <-chan []byte
 	Replaced() <-chan struct{}
+	Taken() bool
 	Detach()
 }
 
 // Amp is the bridge; use FromBridge to adapt *bridge.Bridge.
 type Amp interface {
-	Attach(owner string) (Controller, bool)
+	Attach(owner string, takeover bool) (Controller, bool)
 	Status() bridge.AmpStatus
 	Subscribe() (<-chan bridge.AmpStatus, func())
 	SetPaused(bool)

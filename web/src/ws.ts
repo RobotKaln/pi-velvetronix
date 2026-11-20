@@ -10,7 +10,8 @@ export type ServerText =
   | { t: "error"; code: string; func: number | null; detail?: string }
   | { t: "pong" }
   | { t: "busy" }
-  | { t: "replaced" };
+  | { t: "replaced" }
+  | { t: "taken" };
 
 export type ConnState =
   | { kind: "idle" }
@@ -21,7 +22,9 @@ export type ConnState =
   /** Another browser is the controller; no automatic reconnect until retry(). */
   | { kind: "busy" }
   /** Another tab or window of this session took over; no automatic reconnect until retry(). */
-  | { kind: "replaced" };
+  | { kind: "replaced" }
+  /** Another session (the MCP server) took over; reconnects every TAKEN_RETRY_MS until it lets go. */
+  | { kind: "taken" };
 
 /** The subset of the browser WebSocket used here (injectable for tests). */
 export interface SocketLike {
@@ -45,6 +48,8 @@ export interface WsOptions {
 
 export const BUSY_CLOSE_CODE = 4001;
 export const REPLACED_CLOSE_CODE = 4002;
+export const TAKEN_CLOSE_CODE = 4003;
+export const TAKEN_RETRY_MS = 3000;
 export const PING_INTERVAL_MS = 10_000;
 const KIND_NORMAL = 0x00;
 const KIND_SAVE = 0x01;
@@ -67,6 +72,9 @@ export class WsTransport implements Transport {
   private failures = 0;
   private busySeen = false;
   private replacedSeen = false;
+  private takenSeen = false;
+  /** Taken over earlier: "busy" now means the taker still holds the slot, so keep asking. */
+  private waitingFree = false;
   private reconnectTimer: Timer | null = null;
   private pingTimer: Interval | null = null;
   private readonly frameCbs: ((f: Uint8Array) => void)[] = [];
@@ -101,7 +109,7 @@ export class WsTransport implements Transport {
     if (this.state.kind === "idle") this.open();
   }
 
-  /** Connects now, resetting the backoff. Also leaves the busy and replaced states. */
+  /** Connects now, resetting the backoff. Also leaves the busy, replaced and taken states. */
   retry(): void {
     if (this.state.kind === "open" || this.state.kind === "connecting") return;
     this.clearReconnect();
@@ -129,6 +137,7 @@ export class WsTransport implements Transport {
   private open(): void {
     this.busySeen = false;
     this.replacedSeen = false;
+    this.takenSeen = false;
     this.setState({ kind: "connecting" });
     const create = this.opts.createSocket ?? ((url: string) => new WebSocket(url) as unknown as SocketLike);
     let s: SocketLike;
@@ -169,6 +178,7 @@ export class WsTransport implements Transport {
     switch (m.t) {
       case "hello":
         this.failures = 0;
+        this.waitingFree = false;
         this.setState({ kind: "open" });
         this.startPing();
         break;
@@ -177,6 +187,9 @@ export class WsTransport implements Transport {
         break;
       case "replaced":
         this.replacedSeen = true;
+        break;
+      case "taken":
+        this.takenSeen = true;
         break;
       case "error":
         for (const cb of this.errorCbs) cb({ code: m.code, func: m.func ?? null });
@@ -187,7 +200,17 @@ export class WsTransport implements Transport {
 
   private onClose(code: number): void {
     this.detach();
-    if (this.busySeen || code === BUSY_CLOSE_CODE) {
+    const busy = this.busySeen || code === BUSY_CLOSE_CODE;
+    if (this.takenSeen || code === TAKEN_CLOSE_CODE || (busy && this.waitingFree)) {
+      this.waitingFree = true;
+      this.setState({ kind: "taken" });
+      this.reconnectTimer = (this.opts.setTimeout ?? setTimeout)(() => {
+        this.reconnectTimer = null;
+        this.open();
+      }, TAKEN_RETRY_MS);
+      return;
+    }
+    if (busy) {
       this.setState({ kind: "busy" });
       return;
     }

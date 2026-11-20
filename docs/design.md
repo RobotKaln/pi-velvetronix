@@ -243,6 +243,10 @@ service.
   4002, reason `replaced`; the new one gets `hello` as usual. The client does not
   auto-reconnect after 4001 or 4002 (after 4002 that would make two tabs take the slot from
   each other forever); the user reconnects with "Zkusit znovu" / "Převzít zpět".
+- Takeover: `/ws?takeover=1` (used by the MCP server, `mcp/`) takes the slot from any
+  session. The old controller gets `{"t":"taken"}` and close 4003, reason `taken`. The web
+  client then reconnects every 3 s (a `busy` answer meanwhile keeps it waiting) and re-reads
+  the amp once it is back, so changes made by the taker show up in the page.
 - Liveness: server sends WS Ping every 10 s; no Pong within 5 s closes the socket and
   frees the controller slot. The client also sends `{"t":"ping"}` every 10 s; the server
   answers `{"t":"pong"}`.
@@ -257,6 +261,7 @@ Server -> client text messages:
 { t: "pong" }
 { t: "busy" }                                          // then close 4001
 { t: "replaced" }                                      // then close 4002
+{ t: "taken" }                                         // then close 4003
 type BridgeError = "bad_frame" | "forbidden" | "save_flag_required" | "amp_disconnected"
                  | "queue_full" | "updating" | "write_failed";
 ```

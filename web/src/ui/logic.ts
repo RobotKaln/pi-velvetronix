@@ -4,7 +4,7 @@ import type { AmpConnState, UpdateInfo } from "../api";
 import type { EffectSlot } from "../protocol/program";
 import { EFFECT_PARAMS, type EffectParam } from "../protocol/tables";
 import type { ConnState } from "../ws";
-import { BUSY_TEXT, REPLACED_TEXT } from "./format";
+import { BUSY_TEXT, REPLACED_TEXT, TAKEN_TEXT } from "./format";
 
 export interface GateInput {
   ws: ConnState["kind"];
@@ -27,6 +27,7 @@ export function controlGate(g: GateInput): Gate {
   switch (g.ws) {
     case "busy": return off(`${BUSY_TEXT}. Zavřete ho tam a pak klikněte na Zkusit znovu.`, false, true);
     case "replaced": return off(`${REPLACED_TEXT}.`, false, true);
+    case "taken": return off(`${TAKEN_TEXT}. Až skončí, stránka se připojí sama a načte nový zvuk.`);
     case "idle":
     case "connecting": return off("Připojuji se k ovladači…");
     case "waiting": return off("Spojení s ovladačem je přerušené.", false, true);

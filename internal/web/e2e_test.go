@@ -28,6 +28,11 @@ type wsClient struct {
 
 func dialWS(t *testing.T, h *harness, cookie string, header http.Header) (*wsClient, *http.Response, error) {
 	t.Helper()
+	return dialWSQuery(t, h, cookie, header, "")
+}
+
+func dialWSQuery(t *testing.T, h *harness, cookie string, header http.Header, query string) (*wsClient, *http.Response, error) {
+	t.Helper()
 	if header == nil {
 		header = http.Header{}
 	}
@@ -36,7 +41,7 @@ func dialWS(t *testing.T, h *harness, cookie string, header http.Header) (*wsCli
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	c, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(h.ts.URL, "http")+"/ws", &websocket.DialOptions{HTTPHeader: header})
+	c, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(h.ts.URL, "http")+"/ws"+query, &websocket.DialOptions{HTTPHeader: header})
 	if err != nil {
 		return nil, resp, err
 	}
@@ -277,6 +282,23 @@ func TestEndToEnd(t *testing.T) {
 	if websocket.CloseStatus(m.err) != 4001 {
 		t.Errorf("other session close = %v", m.err)
 	}
+
+	// ?takeover=1 takes over from another session; the old controller is told "taken".
+	taker, _, err := dialWSQuery(t, h, token2, nil, "?takeover=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	taker.text(t, "hello")
+	ws.text(t, "taken")
+	m = ws.next(t, "close", func(m wsMsg) bool { return m.err != nil })
+	if websocket.CloseStatus(m.err) != 4003 {
+		t.Errorf("taken client close = %v", m.err)
+	}
+	waitUntil(t, func() bool { return strings.Contains(h.logs.String(), "controller taken over by another session") })
+	ws = taker
+	ws.ampState(t, "connected")
+	port.in <- ack
+	ws.binary(t, append([]byte{0x00}, ack...)) // amp frames now go to the taker
 
 	// Update staged: clients are told, writes are refused.
 	if resp, _ := h.do(t, c, "POST", "/api/update", "package"); resp.StatusCode != 202 {

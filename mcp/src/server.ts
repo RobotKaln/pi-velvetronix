@@ -2,7 +2,8 @@
 // drives the amp with the same protocol code as the web UI (web/src/protocol). docs/design.md §7.
 //
 // Env: VOX_URL (default http://velvetronix.local), VOX_PASSWORD (required).
-// Only one controller may be connected at a time, so the socket is closed after IDLE_MS without a call.
+// Connects with ?takeover=1: an open browser is pushed out ("taken") and reconnects by itself once
+// the socket is closed, IDLE_MS after the last call, then re-reads the amp and shows the changes.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -19,7 +20,7 @@ import { SONGS, type SongPreset } from "../../web/src/ui/songs";
 
 const BASE = (process.env.VOX_URL ?? "http://velvetronix.local").replace(/\/+$/, "");
 const PASSWORD = process.env.VOX_PASSWORD ?? "";
-const IDLE_MS = 20_000;
+const IDLE_MS = 8000;
 const HELLO_TIMEOUT_MS = 5000;
 const BUSY_CLOSE_CODE = 4001;
 const KIND_NORMAL = 0x00;
@@ -136,7 +137,7 @@ class Amp {
   }
 
   private open(cookie: string): Promise<void> {
-    const url = `${BASE.replace(/^http/, "ws")}/ws`;
+    const url = `${BASE.replace(/^http/, "ws")}/ws?takeover=1`;
     // Node's WebSocket (undici) accepts headers; the daemon requires Origin to match Host.
     const sock = new WebSocket(url, { headers: { Cookie: cookie, Origin: BASE } } as unknown as string[]);
     sock.binaryType = "arraybuffer";
@@ -444,7 +445,7 @@ server.registerTool("vox_save_program", {
 
 server.registerTool("vox_disconnect", {
   title: "Release control",
-  description: "Closes the controller connection at once so a browser can take over (it also closes by itself after 20 s idle).",
+  description: "Closes the controller connection at once so the browser gets control back (it also closes by itself after 8 s idle).",
   inputSchema: {},
 }, () => guarded(async () => {
   amp.close();

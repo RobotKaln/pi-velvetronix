@@ -321,15 +321,17 @@ func (b *Bridge) SetPaused(p bool) {
 }
 
 // Attach makes the caller the controlling client. If a controller is already active, ok is
-// false unless it has the same non-empty owner key: then the new one takes over and the old
-// one's Replaced channel is closed.
-func (b *Bridge) Attach(owner string) (c *Controller, ok bool) {
+// false unless it has the same non-empty owner key or takeover is set: then the new one takes
+// over and the old one's Replaced channel is closed (Taken reports which of the two it was).
+func (b *Bridge) Attach(owner string, takeover bool) (c *Controller, ok bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.ctrl != nil {
-		if owner == "" || b.ctrl.owner != owner {
+		same := owner != "" && b.ctrl.owner == owner
+		if !same && !takeover {
 			return nil, false
 		}
+		b.ctrl.taken = !same
 		close(b.ctrl.replaced)
 	}
 	b.ctrl = &Controller{b: b, owner: owner, frames: make(chan []byte, frameBufferSize), replaced: make(chan struct{})}
@@ -342,6 +344,7 @@ type Controller struct {
 	owner    string
 	frames   chan []byte
 	replaced chan struct{}
+	taken    bool // set before replaced is closed
 }
 
 // Send validates a client frame and queues it for the amp.
@@ -384,8 +387,12 @@ func saveMessage(fn int, frame []byte) string {
 // Frames delivers complete frames received from the amp.
 func (c *Controller) Frames() <-chan []byte { return c.frames }
 
-// Replaced is closed when a new controller with the same owner key took over.
+// Replaced is closed when a new controller took over (same owner key or takeover).
 func (c *Controller) Replaced() <-chan struct{} { return c.replaced }
+
+// Taken reports, once Replaced is closed, whether another session took over (takeover)
+// rather than the same session.
+func (c *Controller) Taken() bool { return c.taken }
 
 // Detach releases the controller slot.
 func (c *Controller) Detach() {

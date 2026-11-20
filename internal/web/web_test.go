@@ -591,7 +591,7 @@ func TestUpdateWatcherUnpauses(t *testing.T) {
 	h.devices(true)
 	p := <-h.ports
 	<-p.out // inquiry
-	ctrl, _ := h.srv.Amp.Attach("test")
+	ctrl, _ := h.srv.Amp.Attach("test", false)
 	defer ctrl.Detach()
 	modeReq := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x12, 0xF7}
 	waitUntil(t, func() bool { return ctrl.Send(0, modeReq) == nil })

@@ -25,6 +25,7 @@ const (
 	wsWriteTimeout = 5 * time.Second
 	closeBusy      = websocket.StatusCode(4001)
 	closeReplaced  = websocket.StatusCode(4002)
+	closeTaken     = websocket.StatusCode(4003)
 )
 
 type helloMsg struct {
@@ -66,9 +67,11 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	c.SetReadLimit(wsReadLimit)
 
 	// Same session (another tab, or a reconnect before the old socket timed out) takes over.
+	// ?takeover=1 (MCP server) takes over from any session; that browser reconnects by itself.
 	owner := sha256.Sum256([]byte(sessionToken(r)))
+	takeover := r.URL.Query().Get("takeover") == "1"
 	s.ctrlMu.Lock()
-	ctrl, ok := s.Amp.Attach(hex.EncodeToString(owner[:]))
+	ctrl, ok := s.Amp.Attach(hex.EncodeToString(owner[:]), takeover)
 	if ok {
 		s.ctrlActive.Store(true)
 	}
@@ -90,7 +93,7 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		}
 		ctrl.Detach()
 	}()
-	s.Log.Info("controller connected", "ip", remoteIP(r))
+	s.Log.Info("controller connected", "ip", remoteIP(r), "takeover", takeover)
 	defer s.Log.Info("controller disconnected", "ip", remoteIP(r))
 
 	ctx, cancel := context.WithCancel(s.ctx)
@@ -132,6 +135,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case <-ctx.Done():
 			return
 		case <-ctrl.Replaced():
+			if ctrl.Taken() {
+				s.Log.Info("controller taken over by another session", "ip", remoteIP(r))
+				_ = send(typeMsg{T: "taken"})
+				_ = c.Close(closeTaken, "taken")
+				return
+			}
 			s.Log.Info("controller replaced by the same session", "ip", remoteIP(r))
 			_ = send(typeMsg{T: "replaced"})
 			_ = c.Close(closeReplaced, "replaced")

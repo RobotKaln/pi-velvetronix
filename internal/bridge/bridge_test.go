@@ -247,21 +247,21 @@ func TestBusyAndOpenError(t *testing.T) {
 
 func TestSingleController(t *testing.T) {
 	b, _ := start(t, &fakeEnv{})
-	c, ok := b.Attach("a")
+	c, ok := b.Attach("a", false)
 	if !ok {
 		t.Fatal("first attach failed")
 	}
-	if _, ok := b.Attach("b"); ok {
+	if _, ok := b.Attach("b", false); ok {
 		t.Fatal("second attach succeeded")
 	}
 	c.Detach()
 	c.Detach() // idempotent
-	c2, ok := b.Attach("b")
+	c2, ok := b.Attach("b", false)
 	if !ok {
 		t.Fatal("attach after detach failed")
 	}
 	c.Detach() // stale controller must not detach the new one
-	if _, ok := b.Attach("a"); ok {
+	if _, ok := b.Attach("a", false); ok {
 		t.Fatal("stale detach released the new controller")
 	}
 	c2.Detach()
@@ -269,8 +269,8 @@ func TestSingleController(t *testing.T) {
 
 func TestSameOwnerTakesOver(t *testing.T) {
 	b, _ := start(t, &fakeEnv{})
-	c, _ := b.Attach("a")
-	c2, ok := b.Attach("a")
+	c, _ := b.Attach("a", false)
+	c2, ok := b.Attach("a", false)
 	if !ok {
 		t.Fatal("same owner could not take over")
 	}
@@ -285,22 +285,53 @@ func TestSameOwnerTakesOver(t *testing.T) {
 	default:
 	}
 	c.Detach() // the replaced controller must not release the slot
-	if _, ok := b.Attach("b"); ok {
+	if _, ok := b.Attach("b", false); ok {
 		t.Fatal("other owner attached after takeover")
 	}
 	c2.Detach()
 
-	e, _ := b.Attach("")
-	if _, ok := b.Attach(""); ok {
+	e, _ := b.Attach("", false)
+	if _, ok := b.Attach("", false); ok {
 		t.Fatal("empty owner key took over")
 	}
 	e.Detach()
 }
 
+func TestTakeover(t *testing.T) {
+	b, _ := start(t, &fakeEnv{})
+	c, _ := b.Attach("a", false)
+	c2, ok := b.Attach("b", true)
+	if !ok {
+		t.Fatal("takeover failed")
+	}
+	select {
+	case <-c.Replaced():
+	default:
+		t.Fatal("old controller not told it was replaced")
+	}
+	if !c.Taken() {
+		t.Error("old controller not marked taken")
+	}
+	c.Detach() // the taken controller must not release the slot
+	if _, ok := b.Attach("a", false); ok {
+		t.Fatal("old owner attached after takeover")
+	}
+	c3, _ := b.Attach("b", false) // same owner: replaced, not taken
+	select {
+	case <-c2.Replaced():
+	default:
+		t.Fatal("same-owner reconnect did not replace")
+	}
+	if c2.Taken() {
+		t.Error("same-owner replacement marked taken")
+	}
+	c3.Detach()
+}
+
 func TestSendChecks(t *testing.T) {
 	env := &fakeEnv{}
 	b, logs := start(t, env)
-	c, _ := b.Attach("a")
+	c, _ := b.Attach("a", false)
 	defer c.Detach()
 
 	if err := c.Send(0, []byte{0xF0, 0xF7}); !errors.Is(err, midi.ErrBadFrame) {
@@ -355,7 +386,7 @@ func TestQueueFull(t *testing.T) {
 	b, _ := start(t, env)
 	p := recv(t, env.ports)
 	waitState(t, b, StateDetected)
-	c, _ := b.Attach("a")
+	c, _ := b.Attach("a", false)
 	defer c.Detach()
 
 	// The port accepts one frame (the inquiry), then the writer blocks on the next one.
@@ -387,7 +418,7 @@ func TestFramesForwarding(t *testing.T) {
 	b, logs := start(t, env)
 	p := connect(t, env, b) // no controller: identity reply dropped silently
 
-	c, _ := b.Attach("a")
+	c, _ := b.Attach("a", false)
 	defer c.Detach()
 	ack := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x23, 0xF7}
 	p.in <- append(append([]byte{0xF8}, ack...), 0xFE)

@@ -14,7 +14,7 @@ describe("controlGate", () => {
     for (const amp of ["disconnected", "detected", "busy", "error", null] as const) {
       expect(controlGate({ ...ok, amp }).enabled, String(amp)).toBe(false);
     }
-    for (const ws of ["idle", "connecting", "waiting", "busy", "replaced"] as const) {
+    for (const ws of ["idle", "connecting", "waiting", "busy", "replaced", "taken"] as const) {
       expect(controlGate({ ...ok, ws }).enabled, ws).toBe(false);
     }
     expect(controlGate({ ...ok, updating: true }).enabled).toBe(false);
@@ -31,6 +31,10 @@ describe("controlGate", () => {
     const replaced = controlGate({ ...ok, ws: "replaced" });
     expect(replaced).toMatchObject({ enabled: false, canRetryWs: true, canRetryRead: false });
     if (!replaced.enabled) expect(replaced.reason).toBe("Ovládání převzala jiná karta nebo okno tohoto prohlížeče.");
+    // Taken over by the MCP server: the page reconnects by itself, no button.
+    const taken = controlGate({ ...ok, ws: "taken" });
+    expect(taken).toMatchObject({ enabled: false, canRetryWs: false, canRetryRead: false });
+    if (!taken.enabled) expect(taken.reason).toContain("připojí sama");
     expect(controlGate({ ...ok, ready: false, readError: "Kombo neodpovídá." })).toMatchObject({ canRetryRead: true });
   });
 });

@@ -8,8 +8,9 @@ Nástroje: `vox_status`, `vox_catalog`, `vox_set_sound` (živě, nic neukládá,
 `vox_list_songs`, `vox_play_song`, `vox_select_program`, `vox_save_program` (přepíše slot),
 `vox_disconnect`.
 
-Ovládat může vždy jen jeden ovladač. Server se proto odpojí po 20 s bez volání. Když je otevřená
-stránka komba v prohlížeči, nástroje vrátí chybu „busy“.
+Ovládat může vždy jen jeden ovladač. Server se připojuje s `?takeover=1`, takže ovládání převezme
+i od otevřeného prohlížeče. Po 8 s bez volání se odpojí. Prohlížeč se pak sám připojí zpátky
+a načte z komba nový zvuk.
 
 ```sh
 cd mcp && npm ci && npm run build
