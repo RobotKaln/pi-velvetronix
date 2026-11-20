@@ -10,7 +10,7 @@ import { createSave } from "./save";
 import { segmented } from "./segmented";
 import { createTechnical } from "./technical";
 
-export function createControl(ctx: Ctx): { el: HTMLElement; render(): void } {
+export function createControl(ctx: Ctx): { el: HTMLElement; render(): void; toolbar: HTMLElement } {
   const edits = createEdits();
 
   const display = segmented<DisplayMode>("Zobrazení", [["graphic", "Grafický"], ["technical", "Technický"]], () => prefs.display, (v) => {
@@ -71,5 +71,6 @@ export function createControl(ctx: Ctx): { el: HTMLElement; render(): void } {
     }
   }
 
-  return { el, render };
+  // The shell moves the toolbar into the header line on wide screens.
+  return { el, render, toolbar };
 }

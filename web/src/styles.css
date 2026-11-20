@@ -578,7 +578,16 @@ details summary { cursor: pointer; color: var(--accent); margin-top: 0.5rem; }
 @media (min-width: 700px) {
   .app { display: flex; flex-wrap: wrap; align-items: stretch; }
   .top { display: contents; }
-  .brand, .tabs, .top .statusbar { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+  .brand, .tabs, .head-tools, .top .statusbar { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+  .brand { order: 0; }
+  .brand-more { margin-left: 0.3em; }
+  .tabs { order: 1; }
+  .head-tools { order: 2; padding: 0 0.5rem; padding-top: env(safe-area-inset-top); }
+  .head-tools[hidden] { display: none !important; }
+  .head-tools .toolbar { flex-wrap: nowrap; gap: 0.5rem; }
+  .head-tools .seg-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .head-tools .seg-btn { min-height: 2rem; padding: 0.1rem 0.6rem; font-size: 0.875rem; }
+  .head-tools .seg-opts { padding: 2px; }
   .brand { margin: 0; padding: 0 1rem; padding-top: env(safe-area-inset-top); }
   .tabs { position: static; flex: 0 1 auto; align-items: flex-end; padding: 0; padding-top: env(safe-area-inset-top); }
   .tab { padding: 0.55rem 0.7rem 0.45rem; }
@@ -587,16 +596,23 @@ details summary { cursor: pointer; color: var(--accent); margin-top: 0.5rem; }
   .top .chips { flex-wrap: nowrap; }
   .top .chip { flex: none; }
   .top .chip-value, .top .chip-addr, .top .chip-more { display: none; }
+  /* Only the coloured dots; the names stay for screen readers and in the tooltip. */
+  .top .chip-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .top .chips { gap: 0.15rem; }
+  .top .chip { padding: 0.35rem; background: transparent; }
+  .top .dot { width: 0.6rem; height: 0.6rem; }
   .stale { margin: 0; }
   main { flex: 0 0 100%; order: 4; }
 }
-@media (min-width: 700px) and (max-width: 900px) {
-  .tab-more { display: none; }
-  .brand { padding: 0 0.75rem; }
-  .tab { padding-inline: 0.5rem; }
-  .top .statusbar { padding: 0 0.75rem; }
-  .top .chips { gap: 0.3rem; }
-  .top .chip { padding: 0.1rem 0.45rem; }
+@media (min-width: 700px) and (max-width: 1000px) {
+  .tab-more, .brand-more { display: none; }
+  .brand { padding: 0 0.5rem; }
+  .tab { padding-inline: 0.35rem; }
+  .head-tools { padding: 0 0.2rem; }
+  .head-tools .toolbar { gap: 0.35rem; }
+  .head-tools .seg-btn { padding-inline: 0.4rem; }
+  .top .statusbar { padding: 0 0.25rem; }
+  .top .chip { padding: 0.25rem; }
 }
 
 /* --- tablet (iPad 11": 834x1194 portrait, 1194x834 landscape): amp and pedals fit on one screen --- */
