@@ -42,8 +42,10 @@ export function createControl(ctx: Ctx): { el: HTMLElement; render(): void } {
     display.render();
     names.render();
     banner.hidden = enabled;
+    // A page that started out watching has nothing to show until the other controller reads the amp.
+    const blind = ctx.data.ws.kind === "watching" && !s.current;
     if (!gate.enabled) {
-      setText(gateText, gate.reason);
+      setText(gateText, blind ? `${gate.reason} Hodnoty se ukážou, až je ten druhý ovladač načte nebo skončí.` : gate.reason);
       retryRead.hidden = !gate.canRetryRead;
       retryWs.hidden = !gate.canRetryWs;
       setText(retryWs, ctx.data.ws.kind === "replaced" ? "Převzít zpět" : "Zkusit znovu");
@@ -52,6 +54,7 @@ export function createControl(ctx: Ctx): { el: HTMLElement; render(): void } {
       retryRead.hidden = retryWs.hidden = true;
     }
     fieldset.disabled = !enabled;
+    fieldset.hidden = blind;
 
     const graphical = prefs.display === "graphic";
     graphic.el.hidden = !graphical;
