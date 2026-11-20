@@ -9,8 +9,8 @@ Nástroje: `vox_status`, `vox_catalog`, `vox_set_sound` (živě, nic neukládá,
 `vox_disconnect`.
 
 Ovládat může vždy jen jeden ovladač. Server se připojuje s `?takeover=1`, takže ovládání převezme
-i od otevřeného prohlížeče. Po 8 s bez volání se odpojí. Prohlížeč se pak sám připojí zpátky
-a načte z komba nový zvuk.
+i od otevřeného prohlížeče. Prohlížeč mezitím přejde do režimu sledování a změny vidí živě.
+Po 8 s bez volání se server odpojí a prohlížeč ovládání zase převezme.
 
 ```sh
 cd mcp && npm ci && npm run build

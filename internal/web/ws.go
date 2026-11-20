@@ -26,6 +26,8 @@ const (
 	closeBusy      = websocket.StatusCode(4001)
 	closeReplaced  = websocket.StatusCode(4002)
 	closeTaken     = websocket.StatusCode(4003)
+	closeFree      = websocket.StatusCode(4004)
+	kindEcho       = 0x02
 )
 
 type helloMsg struct {
@@ -65,6 +67,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer c.CloseNow()
 	c.SetReadLimit(wsReadLimit)
+	if r.URL.Query().Get("watch") == "1" {
+		s.watchWS(c, r)
+		return
+	}
 
 	// Same session (another tab, or a reconnect before the old socket timed out) takes over.
 	// ?takeover=1 (MCP server) takes over from any session; that browser reconnects by itself.
@@ -148,6 +154,80 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case f := <-ctrl.Frames():
 			wctx, wcancel := context.WithTimeout(ctx, wsWriteTimeout)
 			err = c.Write(wctx, websocket.MessageBinary, append([]byte{0x00}, f...))
+			wcancel()
+		case st := <-ampCh:
+			err = send(ampMsg{T: "amp", Amp: st})
+		case u := <-updCh:
+			err = send(updateMsg{T: "update", Update: u})
+		case <-ping.C:
+			pctx, pcancel := context.WithTimeout(ctx, wsPingTimeout)
+			err = c.Ping(pctx)
+			pcancel()
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// watchWS serves a read-only watcher: amp frames (kind 0x00) and echoes of the controller's
+// frames (kind 0x02), until the controller slot is free; then {"t":"free"} and close 4004.
+func (s *Server) watchWS(c *websocket.Conn, r *http.Request) {
+	obs := s.Amp.Observe()
+	defer obs.Close()
+	s.Log.Info("watcher connected", "ip", remoteIP(r))
+	defer s.Log.Info("watcher disconnected", "ip", remoteIP(r))
+
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+	send := func(v any) error {
+		wctx, wcancel := context.WithTimeout(ctx, wsWriteTimeout)
+		defer wcancel()
+		return wsjson.Write(wctx, c, v)
+	}
+	ampCh, unsubAmp := s.Amp.Subscribe()
+	defer unsubAmp()
+	updCh, unsubUpd := s.subscribeUpdates()
+	defer unsubUpd()
+
+	if send(helloMsg{T: "hello", Version: s.Version}) != nil ||
+		send(typeMsg{T: "watching"}) != nil ||
+		send(ampMsg{T: "amp", Amp: s.Amp.Status()}) != nil {
+		return
+	}
+	go func() {
+		defer cancel()
+		for {
+			typ, data, err := c.Read(ctx)
+			if err != nil {
+				return
+			}
+			// A watcher cannot send to the amp; only the application ping is answered.
+			var m typeMsg
+			if typ == websocket.MessageText && json.Unmarshal(data, &m) == nil && m.T == "ping" && send(typeMsg{T: "pong"}) != nil {
+				return
+			}
+		}
+	}()
+
+	ping := time.NewTicker(wsPingInterval)
+	defer ping.Stop()
+	for {
+		var err error
+		select {
+		case <-ctx.Done():
+			return
+		case <-obs.Freed():
+			_ = send(typeMsg{T: "free"})
+			_ = c.Close(closeFree, "free")
+			return
+		case f := <-obs.Frames():
+			kind := byte(0x00)
+			if f.Echo {
+				kind = kindEcho
+			}
+			wctx, wcancel := context.WithTimeout(ctx, wsWriteTimeout)
+			err = c.Write(wctx, websocket.MessageBinary, append([]byte{kind}, f.Data...))
 			wcancel()
 		case st := <-ampCh:
 			err = send(ampMsg{T: "amp", Amp: st})

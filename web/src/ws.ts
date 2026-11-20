@@ -11,7 +11,9 @@ export type ServerText =
   | { t: "pong" }
   | { t: "busy" }
   | { t: "replaced" }
-  | { t: "taken" };
+  | { t: "taken" }
+  | { t: "watching" }
+  | { t: "free" };
 
 export type ConnState =
   | { kind: "idle" }
@@ -19,12 +21,13 @@ export type ConnState =
   /** "hello" received; only now frames may be sent. */
   | { kind: "open" }
   | { kind: "waiting"; retryInMs: number }
-  /** Another browser is the controller; no automatic reconnect until retry(). */
-  | { kind: "busy" }
   /** Another tab or window of this session took over; no automatic reconnect until retry(). */
   | { kind: "replaced" }
-  /** Another session (the MCP server) took over; reconnects every TAKEN_RETRY_MS until it lets go. */
-  | { kind: "taken" };
+  /**
+   * Another browser or the MCP server is the controller (busy or taken over). The socket watches its
+   * traffic read-only (?watch=1) and becomes the controller again once the server says "free".
+   */
+  | { kind: "watching" };
 
 /** The subset of the browser WebSocket used here (injectable for tests). */
 export interface SocketLike {
@@ -49,10 +52,13 @@ export interface WsOptions {
 export const BUSY_CLOSE_CODE = 4001;
 export const REPLACED_CLOSE_CODE = 4002;
 export const TAKEN_CLOSE_CODE = 4003;
-export const TAKEN_RETRY_MS = 3000;
+export const FREE_CLOSE_CODE = 4004;
+/** Pause before (re)entering watch mode, so a lost race for a just-freed slot cannot spin. */
+export const WATCH_DELAY_MS = 300;
 export const PING_INTERVAL_MS = 10_000;
 const KIND_NORMAL = 0x00;
 const KIND_SAVE = 0x01;
+const KIND_ECHO = 0x02;
 
 /** Reconnect delay after `failures` consecutive failed attempts (1 = first): 1, 2, 4, 8, 10, 10 ... s. */
 export function backoffMs(failures: number): number {
@@ -73,11 +79,13 @@ export class WsTransport implements Transport {
   private busySeen = false;
   private replacedSeen = false;
   private takenSeen = false;
-  /** Taken over earlier: "busy" now means the taker still holds the slot, so keep asking. */
-  private waitingFree = false;
+  private freeSeen = false;
+  /** Connect with ?watch=1 (another controller holds the slot). */
+  private watch = false;
   private reconnectTimer: Timer | null = null;
   private pingTimer: Interval | null = null;
   private readonly frameCbs: ((f: Uint8Array) => void)[] = [];
+  private readonly echoCbs: ((f: Uint8Array) => void)[] = [];
   private readonly errorCbs: ((e: { code: string; func: number | null }) => void)[] = [];
   private readonly textCbs: ((m: ServerText) => void)[] = [];
   private readonly stateCbs: ((s: ConnState) => void)[] = [];
@@ -90,6 +98,11 @@ export class WsTransport implements Transport {
 
   onFrame(cb: (f: Uint8Array) => void): void {
     this.frameCbs.push(cb);
+  }
+
+  /** Frames the other controller sent to the amp (watch mode only). */
+  onEcho(cb: (f: Uint8Array) => void): void {
+    this.echoCbs.push(cb);
   }
 
   onError(cb: (e: { code: string; func: number | null }) => void): void {
@@ -109,9 +122,9 @@ export class WsTransport implements Transport {
     if (this.state.kind === "idle") this.open();
   }
 
-  /** Connects now, resetting the backoff. Also leaves the busy, replaced and taken states. */
+  /** Connects now, resetting the backoff. Also leaves the replaced state. */
   retry(): void {
-    if (this.state.kind === "open" || this.state.kind === "connecting") return;
+    if (this.state.kind === "open" || this.state.kind === "connecting" || this.state.kind === "watching") return;
     this.clearReconnect();
     this.failures = 0;
     this.open();
@@ -120,6 +133,7 @@ export class WsTransport implements Transport {
   /** Closes for good (logout); no reconnect. */
   stop(): void {
     this.clearReconnect();
+    this.watch = false;
     const s = this.sock;
     this.detach();
     s?.close(1000, "bye");
@@ -138,11 +152,13 @@ export class WsTransport implements Transport {
     this.busySeen = false;
     this.replacedSeen = false;
     this.takenSeen = false;
-    this.setState({ kind: "connecting" });
+    this.freeSeen = false;
+    // While watching the page keeps showing the amp, so there is no "connecting" in between.
+    if (!this.watch) this.setState({ kind: "connecting" });
     const create = this.opts.createSocket ?? ((url: string) => new WebSocket(url) as unknown as SocketLike);
     let s: SocketLike;
     try {
-      s = create((this.opts.url ?? defaultUrl)());
+      s = create((this.opts.url ?? defaultUrl)() + (this.watch ? "?watch=1" : ""));
     } catch {
       this.scheduleReconnect();
       return;
@@ -161,10 +177,9 @@ export class WsTransport implements Transport {
   private onMessage(data: unknown): void {
     if (data instanceof ArrayBuffer) {
       const b = new Uint8Array(data);
-      if (b.length >= 2 && b[0] === KIND_NORMAL) {
-        const frame = b.slice(1);
-        for (const cb of this.frameCbs) cb(frame);
-      }
+      if (b.length < 2) return;
+      if (b[0] === KIND_NORMAL) for (const cb of this.frameCbs) cb(b.slice(1));
+      else if (b[0] === KIND_ECHO && this.watch) for (const cb of this.echoCbs) cb(b.slice(1));
       return;
     }
     if (typeof data !== "string") return;
@@ -178,9 +193,15 @@ export class WsTransport implements Transport {
     switch (m.t) {
       case "hello":
         this.failures = 0;
-        this.waitingFree = false;
-        this.setState({ kind: "open" });
+        // A watcher gets "watching" right after hello.
+        if (!this.watch) this.setState({ kind: "open" });
         this.startPing();
+        break;
+      case "watching":
+        this.setState({ kind: "watching" });
+        break;
+      case "free":
+        this.freeSeen = true;
         break;
       case "busy":
         this.busySeen = true;
@@ -200,18 +221,20 @@ export class WsTransport implements Transport {
 
   private onClose(code: number): void {
     this.detach();
-    const busy = this.busySeen || code === BUSY_CLOSE_CODE;
-    if (this.takenSeen || code === TAKEN_CLOSE_CODE || (busy && this.waitingFree)) {
-      this.waitingFree = true;
-      this.setState({ kind: "taken" });
+    // The slot is free again: try to become the controller.
+    if (this.watch && (this.freeSeen || code === FREE_CLOSE_CODE)) {
+      this.watch = false;
+      this.open();
+      return;
+    }
+    // Someone else controls the amp (another browser, or the MCP server took over): watch it.
+    if (this.busySeen || code === BUSY_CLOSE_CODE || this.takenSeen || code === TAKEN_CLOSE_CODE) {
+      this.watch = true;
+      this.setState({ kind: "watching" });
       this.reconnectTimer = (this.opts.setTimeout ?? setTimeout)(() => {
         this.reconnectTimer = null;
         this.open();
-      }, TAKEN_RETRY_MS);
-      return;
-    }
-    if (busy) {
-      this.setState({ kind: "busy" });
+      }, WATCH_DELAY_MS);
       return;
     }
     // Reconnecting here would take the slot back from the other tab, and it from us, forever.

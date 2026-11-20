@@ -85,6 +85,7 @@ type Bridge struct {
 	ctrl   *Controller
 	paused bool
 	subs   map[chan AmpStatus]struct{}
+	obs    map[*Observer]struct{}
 }
 
 // New creates a bridge that uses the rawmidi node device if set, else the first ALSA
@@ -107,6 +108,7 @@ func NewWithIO(discover func() ([]midi.Device, error), open func(node string) (m
 		inquiryInterval: 30 * time.Second,
 		status:          AmpStatus{State: StateDisconnected},
 		subs:            map[chan AmpStatus]struct{}{},
+		obs:             map[*Observer]struct{}{},
 	}
 }
 
@@ -243,6 +245,7 @@ func (b *Bridge) fromAmp(frame []byte) {
 		b.setStatusLocked(st)
 		b.log.Info("amp identified", "identity", st.Identity)
 	}
+	b.observeLocked(ObservedFrame{Data: frame})
 	if b.ctrl == nil {
 		return
 	}
@@ -250,6 +253,63 @@ func (b *Bridge) fromAmp(frame []byte) {
 	case b.ctrl.frames <- frame:
 	default:
 		b.log.Warn("controller too slow, dropping amp frame", "len", len(frame))
+	}
+}
+
+// ObservedFrame is a frame shown to observers: from the amp, or (Echo) sent by the controller.
+type ObservedFrame struct {
+	Echo bool
+	Data []byte
+}
+
+// Observer watches the controller's traffic without being able to send.
+type Observer struct {
+	b      *Bridge
+	frames chan ObservedFrame
+	freed  chan struct{}
+}
+
+// Observe registers a read-only watcher. Its Freed channel is closed once no controller is
+// attached (at once if there is none), so the watcher can try to become the controller.
+func (b *Bridge) Observe() *Observer {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	o := &Observer{b: b, frames: make(chan ObservedFrame, frameBufferSize), freed: make(chan struct{})}
+	if b.ctrl == nil {
+		close(o.freed)
+		return o
+	}
+	b.obs[o] = struct{}{}
+	return o
+}
+
+// Frames delivers amp frames and echoes of the controller's frames.
+func (o *Observer) Frames() <-chan ObservedFrame { return o.frames }
+
+// Freed is closed when the controller slot becomes free.
+func (o *Observer) Freed() <-chan struct{} { return o.freed }
+
+// Close unregisters the observer.
+func (o *Observer) Close() {
+	o.b.mu.Lock()
+	defer o.b.mu.Unlock()
+	delete(o.b.obs, o)
+}
+
+func (b *Bridge) observeLocked(f ObservedFrame) {
+	for o := range b.obs {
+		select {
+		case o.frames <- f:
+		default:
+			b.log.Warn("observer too slow, dropping frame", "len", len(f.Data))
+		}
+	}
+}
+
+func (b *Bridge) freeObserversLocked() {
+	for o := range b.obs {
+		close(o.freed)
+		delete(b.obs, o)
 	}
 }
 
@@ -370,6 +430,7 @@ func (c *Controller) Send(kind byte, frame []byte) error {
 	if kind == 1 {
 		b.log.Info(saveMessage(fn, frame))
 	}
+	b.observeLocked(ObservedFrame{Echo: true, Data: append([]byte(nil), frame...)})
 	return nil
 }
 
@@ -401,5 +462,6 @@ func (c *Controller) Detach() {
 	defer b.mu.Unlock()
 	if b.ctrl == c {
 		b.ctrl = nil
+		b.freeObserversLocked()
 	}
 }

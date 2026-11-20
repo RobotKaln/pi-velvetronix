@@ -759,3 +759,43 @@ describe("audition", () => {
     expect((await ok).failed).toEqual([]);
   });
 });
+
+describe("watch mode", () => {
+  it("follows the other controller's frames and the amp's replies without sending anything", async () => {
+    await (async () => {
+      const r = client.readAll();
+      await vi.advanceTimersByTimeAsync(500);
+      await r;
+    })();
+    const sentBefore = amp.sent.length;
+    client.setObserving(true);
+
+    // Live edit by the other controller: 41 04 00 (GAIN) = 77.
+    client.observeHost(msg.ampParam(0, 77));
+    expect(states.at(-1)!.current!.amp[0]).toBe(77);
+
+    // It selects slot 5: the cached slot becomes current at once.
+    client.observeHost(msg.selectProgram(5));
+    expect(states.at(-1)!.program).toBe(5);
+    expect(states.at(-1)!.current!.name).toBe("SLOT 5");
+
+    // Its re-read reply (40) and a slot write (4C) update us too.
+    const s = Uint8Array.from(VECTOR_A_STRUCT);
+    amp.push(currentFrame(pack7(s)));
+    client.observeHost(programFrame(2, pack7(s)));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(states.at(-1)!.current!.name).toBe("PI TEST");
+    expect(states.at(-1)!.slots[2]!.name).toBe("PI TEST");
+
+    // A program change on the amp's panel: no request while watching.
+    amp.push(korg("4E 00 01"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(states.at(-1)!.program).toBe(1);
+    expect(amp.sent.length).toBe(sentBefore);
+
+    // Ignored when not watching.
+    client.setObserving(false);
+    client.observeHost(msg.ampParam(0, 5));
+    expect(states.at(-1)!.current!.amp[0]).not.toBe(5);
+  });
+});

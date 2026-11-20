@@ -328,6 +328,47 @@ func TestTakeover(t *testing.T) {
 	c3.Detach()
 }
 
+func TestObserver(t *testing.T) {
+	env := &fakeEnv{}
+	b, _ := start(t, env)
+	free := b.Observe()
+	select {
+	case <-free.Freed():
+	default:
+		t.Fatal("observer without a controller not freed at once")
+	}
+	free.Close()
+
+	env.mu.Lock()
+	env.devs = []midi.Device{testDev}
+	env.mu.Unlock()
+	p := connect(t, env, b)
+	c, _ := b.Attach("a", false)
+	o := b.Observe()
+	defer o.Close()
+
+	if err := c.Send(0, modeReq); err != nil {
+		t.Fatal(err)
+	}
+	if f := recv(t, o.Frames()); !f.Echo || !bytes.Equal(f.Data, modeReq) {
+		t.Errorf("echo = %+v", f)
+	}
+	recv(t, p.out)
+	ack := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x23, 0xF7}
+	p.in <- ack
+	if f := recv(t, o.Frames()); f.Echo || !bytes.Equal(f.Data, ack) {
+		t.Errorf("amp frame = %+v", f)
+	}
+	recv(t, c.Frames()) // the controller still gets it
+
+	c.Detach()
+	select {
+	case <-o.Freed():
+	case <-time.After(2 * time.Second):
+		t.Fatal("observer not freed after detach")
+	}
+}
+
 func TestSendChecks(t *testing.T) {
 	env := &fakeEnv{}
 	b, logs := start(t, env)

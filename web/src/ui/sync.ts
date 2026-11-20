@@ -21,13 +21,21 @@ export class AmpSync {
     private readonly onChange: () => void,
   ) {}
 
-  /** live = WebSocket open AND amp "connected" AND no update in progress. Reads only, never writes. */
-  update(live: boolean): void {
+  /**
+   * live = WebSocket open AND amp "connected" AND no update in progress. Reads only, never writes.
+   * keep = watching another controller: the model stays and follows its traffic, it is re-read once live.
+   */
+  update(live: boolean, keep = false): void {
     if (live === this.live) return;
     this.live = live;
     this.gen++;
     if (live) {
       this.read();
+      return;
+    }
+    if (keep) {
+      this.reading = false;
+      this.onChange();
       return;
     }
     this.client.reset();

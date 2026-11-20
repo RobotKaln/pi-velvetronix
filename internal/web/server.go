@@ -49,9 +49,17 @@ type Controller interface {
 	Detach()
 }
 
+// Observer is a read-only watcher of the controller's traffic (*bridge.Observer).
+type Observer interface {
+	Frames() <-chan bridge.ObservedFrame
+	Freed() <-chan struct{}
+	Close()
+}
+
 // Amp is the bridge; use FromBridge to adapt *bridge.Bridge.
 type Amp interface {
 	Attach(owner string, takeover bool) (Controller, bool)
+	Observe() Observer
 	Status() bridge.AmpStatus
 	Subscribe() (<-chan bridge.AmpStatus, func())
 	SetPaused(bool)

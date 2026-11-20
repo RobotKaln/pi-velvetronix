@@ -21,6 +21,8 @@ func (a bridgeAmp) Attach(owner string, takeover bool) (Controller, bool) {
 	return c, true
 }
 
+func (a bridgeAmp) Observe() Observer { return a.Bridge.Observe() }
+
 type fileUpdater struct{ stateDir, running string }
 
 // NewUpdater returns the Updater backed by the update package and stateDir.

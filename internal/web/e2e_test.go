@@ -300,6 +300,27 @@ func TestEndToEnd(t *testing.T) {
 	port.in <- ack
 	ws.binary(t, append([]byte{0x00}, ack...)) // amp frames now go to the taker
 
+	// ?watch=1 watches the controller: amp frames (0x00) and the controller's own frames (0x02).
+	watcher, _, err := dialWSQuery(t, h, token, nil, "?watch=1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	watcher.text(t, "hello")
+	watcher.text(t, "watching")
+	watcher.ampState(t, "connected")
+	ws.send(t, 0, modeReq)
+	<-port.out
+	watcher.binary(t, append([]byte{0x02}, modeReq...))
+	port.in <- ack
+	watcher.binary(t, append([]byte{0x00}, ack...))
+	ws.binary(t, append([]byte{0x00}, ack...))
+	watcher.send(t, 0, modeReq) // ignored: a watcher cannot write
+	select {
+	case f := <-port.out:
+		t.Fatalf("watcher frame reached the amp: % X", f)
+	case <-time.After(100 * time.Millisecond):
+	}
+
 	// Update staged: clients are told, writes are refused.
 	if resp, _ := h.do(t, c, "POST", "/api/update", "package"); resp.StatusCode != 202 {
 		t.Fatalf("update: %d", resp.StatusCode)
@@ -319,8 +340,13 @@ func TestEndToEnd(t *testing.T) {
 	port.Close()
 	ws.ampState(t, "disconnected")
 
-	// Closing the controller frees the slot.
+	// Closing the controller frees the slot; the watcher is told so it can take control.
 	ws.c.Close(websocket.StatusNormalClosure, "")
+	watcher.text(t, "free")
+	m = watcher.next(t, "close", func(m wsMsg) bool { return m.err != nil })
+	if websocket.CloseStatus(m.err) != 4004 {
+		t.Errorf("watcher close = %v", m.err)
+	}
 	waitUntil(t, func() bool {
 		_, m := h.do(t, c, "GET", "/api/status", "")
 		return m["controller"].(map[string]any)["active"] == false

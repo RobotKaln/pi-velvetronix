@@ -14,7 +14,7 @@ describe("controlGate", () => {
     for (const amp of ["disconnected", "detected", "busy", "error", null] as const) {
       expect(controlGate({ ...ok, amp }).enabled, String(amp)).toBe(false);
     }
-    for (const ws of ["idle", "connecting", "waiting", "busy", "replaced", "taken"] as const) {
+    for (const ws of ["idle", "connecting", "waiting", "replaced", "watching"] as const) {
       expect(controlGate({ ...ok, ws }).enabled, ws).toBe(false);
     }
     expect(controlGate({ ...ok, updating: true }).enabled).toBe(false);
@@ -25,16 +25,13 @@ describe("controlGate", () => {
   });
 
   it("offers the right retry", () => {
-    const busy = controlGate({ ...ok, ws: "busy" });
-    expect(busy).toMatchObject({ enabled: false, canRetryWs: true, canRetryRead: false });
-    if (!busy.enabled) expect(busy.reason).toContain("Ovládání je otevřené v jiném prohlížeči");
     const replaced = controlGate({ ...ok, ws: "replaced" });
     expect(replaced).toMatchObject({ enabled: false, canRetryWs: true, canRetryRead: false });
     if (!replaced.enabled) expect(replaced.reason).toBe("Ovládání převzala jiná karta nebo okno tohoto prohlížeče.");
-    // Taken over by the MCP server: the page reconnects by itself, no button.
-    const taken = controlGate({ ...ok, ws: "taken" });
-    expect(taken).toMatchObject({ enabled: false, canRetryWs: false, canRetryRead: false });
-    if (!taken.enabled) expect(taken.reason).toContain("připojí sama");
+    // Another controller holds the amp: the page watches and takes control back by itself, no button.
+    const watching = controlGate({ ...ok, ws: "watching" });
+    expect(watching).toMatchObject({ enabled: false, canRetryWs: false, canRetryRead: false });
+    if (!watching.enabled) expect(watching.reason).toContain("vidíš živě");
     expect(controlGate({ ...ok, ready: false, readError: "Kombo neodpovídá." })).toMatchObject({ canRetryRead: true });
   });
 });

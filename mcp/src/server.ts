@@ -2,8 +2,8 @@
 // drives the amp with the same protocol code as the web UI (web/src/protocol). docs/design.md §7.
 //
 // Env: VOX_URL (default http://velvetronix.local), VOX_PASSWORD (required).
-// Connects with ?takeover=1: an open browser is pushed out ("taken") and reconnects by itself once
-// the socket is closed, IDLE_MS after the last call, then re-reads the amp and shows the changes.
+// Connects with ?takeover=1: an open browser is pushed out ("taken"), watches our traffic live
+// (?watch=1) and takes control back once the socket is closed, IDLE_MS after the last call.
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";

@@ -51,7 +51,7 @@ export function createStatusBar(ctx: Ctx): { el: HTMLElement; render(): void } {
       amp.set(text, lvl, d.amp.name ?? undefined);
     }
     const k = d.ws.kind;
-    ctl.set(wsLabel(d.ws), k === "open" ? "ok" : k === "busy" ? "err" : "warn");
+    ctl.set(wsLabel(d.ws), k === "open" ? "ok" : "warn");
   }
 
   return { el, render };

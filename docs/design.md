@@ -244,9 +244,13 @@ service.
   auto-reconnect after 4001 or 4002 (after 4002 that would make two tabs take the slot from
   each other forever); the user reconnects with "Zkusit znovu" / "Převzít zpět".
 - Takeover: `/ws?takeover=1` (used by the MCP server, `mcp/`) takes the slot from any
-  session. The old controller gets `{"t":"taken"}` and close 4003, reason `taken`. The web
-  client then reconnects every 3 s (a `busy` answer meanwhile keeps it waiting) and re-reads
-  the amp once it is back, so changes made by the taker show up in the page.
+  session. The old controller gets `{"t":"taken"}` and close 4003, reason `taken`.
+- Watching: after `busy` (4001) or `taken` (4003) the web client reconnects with `/ws?watch=1`.
+  A watcher gets `hello`, `{"t":"watching"}` and `amp` messages, every frame from the amp (kind
+  0x00) and every frame the controller sends (kind 0x02, echo); it cannot send. The page keeps
+  its model and follows that traffic, so the controller's changes show up live. When the slot
+  becomes free the watcher gets `{"t":"free"}` and close 4004, connects as controller and
+  re-reads the amp.
 - Liveness: server sends WS Ping every 10 s; no Pong within 5 s closes the socket and
   frees the controller slot. The client also sends `{"t":"ping"}` every 10 s; the server
   answers `{"t":"pong"}`.
@@ -262,6 +266,8 @@ Server -> client text messages:
 { t: "busy" }                                          // then close 4001
 { t: "replaced" }                                      // then close 4002
 { t: "taken" }                                         // then close 4003
+{ t: "watching" }                                      // ?watch=1: after hello
+{ t: "free" }                                          // watcher: slot free, then close 4004
 type BridgeError = "bad_frame" | "forbidden" | "save_flag_required" | "amp_disconnected"
                  | "queue_full" | "updating" | "write_failed";
 ```
