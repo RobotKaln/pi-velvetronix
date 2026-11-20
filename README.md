@@ -27,8 +27,9 @@ aplikace VOX Tone Room.
   ostatní, i co se otočí přímo na kombu.
 - **Aplikace na ploše iPadu.** V Safari Sdílet → Přidat na plochu: vlastní ikona, celá obrazovka
   bez lišt Safari (viz [Instalace na plochu](#instalace-na-plochu-ipadu-nebo-telefonu)).
-- **Rozložení pro tablet.** Na iPadu 11" se celý panel s pedály vejde na jednu obrazovku na šířku
-  i na výšku. Na telefonu jsou ovládací prvky pod sebou.
+- **Rozložení pro tablet a telefon.** Na iPadu 11" se celý panel s pedály vejde na jednu obrazovku
+  na šířku i na výšku. Na telefonu je krátká hlavička (název, tečky stavu, záložky) a pedály se
+  přepínají záložkami Pedál 1 / Pedál 2 / Reverb, které ukazují i zapnutí a typ efektu.
 - **Bez zásahu do paměti komba, dokud to nechceš.** Pi nepustí zápis do paměti komba (`4C`, `11`),
   pokud zpráva není označená jako výslovné uložení. Start, připojení ani aktualizace nic
   nepřepisují.
