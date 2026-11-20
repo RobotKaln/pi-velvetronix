@@ -285,6 +285,40 @@ func loggedIn(t *testing.T, h *harness) *http.Client {
 
 // --- tests ---
 
+func TestAppFiles(t *testing.T) {
+	h := newHarness(t, fakeAuthed(), fstest.MapFS{
+		indexFile:              {Data: gzipBytes("<!doctype html>")},
+		"icon-192.png":         {Data: []byte("png")},
+		"manifest.webmanifest": {Data: []byte("{}")},
+	})
+	for _, c := range []struct{ path, ctype string }{
+		{"/icon-192.png", "image/png"},
+		{"/manifest.webmanifest", "application/manifest+json"},
+	} {
+		resp, body := h.raw(t, c.path)
+		if resp.StatusCode != 200 || resp.Header.Get("Content-Type") != c.ctype || body == "" {
+			t.Errorf("%s: %d %q %q (served without login)", c.path, resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		}
+	}
+	// Only the listed files: not the page archive, not missing ones.
+	for _, p := range []string{"/index.html.gz", "/icon-512.png", "/secret.txt"} {
+		if resp, _ := h.raw(t, p); resp.StatusCode != 404 {
+			t.Errorf("%s: %d, want 404", p, resp.StatusCode)
+		}
+	}
+}
+
+func (h *harness) raw(t *testing.T, path string) (*http.Response, string) {
+	t.Helper()
+	resp, err := http.Get(h.ts.URL + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return resp, string(b)
+}
+
 func TestIndex(t *testing.T) {
 	h := newHarness(t, fakeAuthed(), nil)
 	req, _ := http.NewRequest("GET", h.ts.URL+"/", nil)
