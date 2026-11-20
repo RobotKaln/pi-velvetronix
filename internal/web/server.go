@@ -44,6 +44,7 @@ type Controller interface {
 	Send(kind byte, frame []byte) error
 	Frames() <-chan bridge.ObservedFrame
 	Replaced() <-chan struct{}
+	Lost() <-chan struct{}
 	Detach()
 }
 
@@ -51,6 +52,7 @@ type Controller interface {
 type Observer interface {
 	Frames() <-chan bridge.ObservedFrame
 	Freed() <-chan struct{}
+	Lost() <-chan struct{}
 	Close()
 }
 

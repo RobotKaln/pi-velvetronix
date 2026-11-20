@@ -242,6 +242,7 @@ func TestEndToEnd(t *testing.T) {
 	ws.binary(t, append([]byte{0x00}, ack...))
 
 	// Another tab of the same session and another session control the amp at the same time.
+	gain := korg(0x41, 0x04, 0x00, 0x2D, 0x00)
 	ws2, _, err := dialWS(t, h, token, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -267,17 +268,16 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("controller status = %v", m["controller"])
 	}
 
-	// A request: the others see it (kind 0x02), the reply goes to the sender only.
-	ws.send(t, 0, modeReq)
-	if got := <-port.out; !bytes.Equal(got, modeReq) {
+	// A change: the reply goes to the sender, and once the amp ACKs it the others see it (kind 0x02).
+	ws.send(t, 0, gain)
+	if got := <-port.out; !bytes.Equal(got, gain) {
 		t.Fatalf("written % X", got)
 	}
-	ws2.binary(t, append([]byte{0x02}, modeReq...))
-	other.binary(t, append([]byte{0x02}, modeReq...))
 	port.in <- ack
 	ws.binary(t, append([]byte{0x00}, ack...))
+	ws2.binary(t, append([]byte{0x02}, gain...))
+	other.binary(t, append([]byte{0x02}, gain...))
 	// A knob turned on the amp reaches everyone.
-	gain := korg(0x41, 0x04, 0x00, 0x2D, 0x00)
 	port.in <- gain
 	for _, w := range []*wsClient{ws, ws2, other} {
 		w.binary(t, append([]byte{0x00}, gain...))
@@ -309,11 +309,11 @@ func TestEndToEnd(t *testing.T) {
 	watcher.text(t, "hello")
 	watcher.text(t, "watching")
 	watcher.ampState(t, "connected")
-	ws2.send(t, 0, modeReq)
+	ws2.send(t, 0, gain)
 	<-port.out
-	watcher.binary(t, append([]byte{0x02}, modeReq...))
 	port.in <- ack
 	watcher.binary(t, append([]byte{0x00}, ack...))
+	watcher.binary(t, append([]byte{0x02}, gain...))
 	ws2.binary(t, append([]byte{0x00}, ack...))
 	watcher.send(t, 0, modeReq) // ignored: a watcher cannot write
 	select {

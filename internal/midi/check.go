@@ -103,3 +103,6 @@ func IsReply(frame []byte) bool {
 	}
 	return false
 }
+
+// IsAck reports whether an amp frame is the ACK (23) that confirms a host frame was applied.
+func IsAck(frame []byte) bool { return len(frame) == 8 && korgFunc(frame) == 0x23 }

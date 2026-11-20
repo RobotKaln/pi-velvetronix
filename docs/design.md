@@ -236,12 +236,15 @@ service.
 - Requires the session cookie (checked before Accept, else HTTP 401). Origin must equal
   Host (coder/websocket default). Read limit 4 KiB.
 - Shared control: up to 8 controllers at once (tabs, browsers, the MCP server in `mcp/`). Every
-  frame a controller sends is forwarded to the others as kind 0x02 (echo), so each page applies
+  frame a controller sends is forwarded to the others as kind 0x02 (echo) once the amp has ACKed
+  it (a refused frame is never shown to them), so each page applies
   the others' live edits (`41`), program selects (`4E`, then it re-reads the Current Buffer) and
   saves (`4C`). The bridge writes requests one at a time and waits for the amp's reply (ACK, NAK,
   data dump, identity; at most 2 s) before writing the next, because replies do not say whom they
   answer; the reply goes to the sender only. Frames the amp sends on its own (panel knobs `41`,
   `4E`, `21`) go to every controller.
+- A client too slow to take its frames loses some (64-frame buffer); it then gets
+  `{"t":"resync"}` and the page reads the whole amp state again.
 - All 8 slots taken: the server sends `{"t":"busy"}` and closes with 4001. `/ws?takeover=1` then
   drops the oldest controller instead, which gets `{"t":"taken"}` and close 4003.
 - Watching: after `busy` (4001) or `taken` (4003) the web client reconnects with `/ws?watch=1`.
@@ -265,6 +268,7 @@ Server -> client text messages:
 { t: "taken" }                                         // then close 4003
 { t: "watching" }                                      // ?watch=1: after hello
 { t: "free" }                                          // watcher: slot free, then close 4004
+{ t: "resync" }                                        // frames for this client were dropped
 type BridgeError = "bad_frame" | "forbidden" | "save_flag_required" | "amp_disconnected"
                  | "queue_full" | "updating" | "write_failed";
 ```

@@ -87,10 +87,11 @@ type Bridge struct {
 	status AmpStatus
 	queue  chan outFrame // nil while no port is open
 	ctrls  []*Controller // oldest first
-	// pending is the controller whose request was written last and is not answered yet;
-	// the amp's reply goes to it alone. replied is closed when the reply arrives.
-	pending *Controller
-	replied chan struct{}
+	// pending is the controller whose request (pendingFrame) was written last and is not
+	// answered yet; the amp's reply goes to it alone. replied is closed when the reply arrives.
+	pending      *Controller
+	pendingFrame []byte
+	replied      chan struct{}
 	paused bool
 	subs   map[chan AmpStatus]struct{}
 	obs    map[*Observer]struct{}
@@ -203,7 +204,7 @@ func (b *Bridge) serve(ctx context.Context, port midi.Port, st AmpStatus) {
 					// or data), so only one is outstanding and its reply can be routed back.
 					replied = make(chan struct{})
 					b.mu.Lock()
-					b.pending, b.replied = f.from, replied
+					b.pending, b.pendingFrame, b.replied = f.from, f.data, replied
 					b.mu.Unlock()
 				}
 				if _, err := port.Write(f.data); err != nil {
@@ -220,7 +221,7 @@ func (b *Bridge) serve(ctx context.Context, port midi.Port, st AmpStatus) {
 				}
 				b.mu.Lock()
 				if b.replied == replied {
-					b.pending, b.replied = nil, nil
+					b.pending, b.pendingFrame, b.replied = nil, nil, nil
 				}
 				b.mu.Unlock()
 			}
@@ -279,8 +280,19 @@ func (b *Bridge) fromAmp(frame []byte) {
 	b.observeLocked(f)
 	if b.pending != nil && midi.IsReply(frame) {
 		b.pending.deliverLocked(f)
+		if midi.IsAck(frame) {
+			// Applied by the amp: now the other controllers and the observers see the change.
+			// A refused frame (NAK) is never shown to them.
+			echo := ObservedFrame{Echo: true, Data: b.pendingFrame}
+			b.observeLocked(echo)
+			for _, o := range b.ctrls {
+				if o != b.pending {
+					o.deliverLocked(echo)
+				}
+			}
+		}
 		close(b.replied)
-		b.pending, b.replied = nil, nil
+		b.pending, b.pendingFrame, b.replied = nil, nil, nil
 		return
 	}
 	// Changes made on the amp's panel (and replies nobody waits for) go to every controller.
@@ -300,6 +312,7 @@ type Observer struct {
 	b      *Bridge
 	frames chan ObservedFrame
 	freed  chan struct{}
+	lost   chan struct{} // signalled when a frame was dropped
 }
 
 // Observe registers a read-only watcher. Its Freed channel is closed once a controller slot
@@ -307,7 +320,7 @@ type Observer struct {
 func (b *Bridge) Observe() *Observer {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	o := &Observer{b: b, frames: make(chan ObservedFrame, frameBufferSize), freed: make(chan struct{})}
+	o := &Observer{b: b, frames: make(chan ObservedFrame, frameBufferSize), freed: make(chan struct{}), lost: make(chan struct{}, 1)}
 	if len(b.ctrls) < MaxControllers {
 		close(o.freed)
 		return o
@@ -322,6 +335,9 @@ func (o *Observer) Frames() <-chan ObservedFrame { return o.frames }
 // Freed is closed when a controller slot becomes free.
 func (o *Observer) Freed() <-chan struct{} { return o.freed }
 
+// Lost is signalled after frames were dropped for this observer.
+func (o *Observer) Lost() <-chan struct{} { return o.lost }
+
 // Close unregisters the observer.
 func (o *Observer) Close() {
 	o.b.mu.Lock()
@@ -335,6 +351,7 @@ func (b *Bridge) observeLocked(f ObservedFrame) {
 		case o.frames <- f:
 		default:
 			b.log.Warn("observer too slow, dropping frame", "len", len(f.Data))
+			signal(o.lost)
 		}
 	}
 }
@@ -433,7 +450,7 @@ func (b *Bridge) Attach(takeover bool) (c *Controller, ok bool) {
 		b.ctrls = b.ctrls[1:]
 		close(old.replaced)
 	}
-	c = &Controller{b: b, frames: make(chan ObservedFrame, frameBufferSize), replaced: make(chan struct{})}
+	c = &Controller{b: b, frames: make(chan ObservedFrame, frameBufferSize), replaced: make(chan struct{}), lost: make(chan struct{}, 1)}
 	b.ctrls = append(b.ctrls, c)
 	return c, true
 }
@@ -450,6 +467,7 @@ type Controller struct {
 	b        *Bridge
 	frames   chan ObservedFrame
 	replaced chan struct{}
+	lost     chan struct{} // signalled when a frame was dropped
 }
 
 func (c *Controller) deliverLocked(f ObservedFrame) {
@@ -457,6 +475,17 @@ func (c *Controller) deliverLocked(f ObservedFrame) {
 	case c.frames <- f:
 	default:
 		c.b.log.Warn("controller too slow, dropping frame", "len", len(f.Data), "echo", f.Echo)
+		signal(c.lost)
+	}
+}
+
+// Lost is signalled after frames were dropped for this controller: its model may be stale.
+func (c *Controller) Lost() <-chan struct{} { return c.lost }
+
+func signal(ch chan struct{}) {
+	select {
+	case ch <- struct{}{}:
+	default:
 	}
 }
 
@@ -482,14 +511,6 @@ func (c *Controller) Send(kind byte, frame []byte) error {
 	}
 	if kind == 1 {
 		b.log.Info(saveMessage(fn, frame))
-	}
-	// The other controllers and the observers see what this one changes.
-	echo := ObservedFrame{Echo: true, Data: append([]byte(nil), frame...)}
-	b.observeLocked(echo)
-	for _, o := range b.ctrls {
-		if o != c {
-			o.deliverLocked(echo)
-		}
 	}
 	return nil
 }

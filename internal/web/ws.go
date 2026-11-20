@@ -129,6 +129,9 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 			return
 		case f := <-ctrl.Frames():
 			err = writeFrame(ctx, c, f)
+		case <-ctrl.Lost():
+			// Frames were dropped (client too slow): the page re-reads the amp.
+			err = send(typeMsg{T: "resync"})
 		case st := <-ampCh:
 			err = send(ampMsg{T: "amp", Amp: st})
 		case u := <-updCh:
@@ -197,6 +200,8 @@ func (s *Server) watchWS(c *websocket.Conn, r *http.Request) {
 			return
 		case f := <-obs.Frames():
 			err = writeFrame(ctx, c, f)
+		case <-obs.Lost():
+			err = send(typeMsg{T: "resync"})
 		case st := <-ampCh:
 			err = send(ampMsg{T: "amp", Amp: st})
 		case u := <-updCh:

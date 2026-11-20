@@ -13,7 +13,9 @@ export type ServerText =
   | { t: "replaced" }
   | { t: "taken" }
   | { t: "watching" }
-  | { t: "free" };
+  | { t: "free" }
+  /** Frames for this page were dropped (it was too slow): its model may be stale. */
+  | { t: "resync" };
 
 export type ConnState =
   | { kind: "idle" }

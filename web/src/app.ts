@@ -48,6 +48,12 @@ export function runApp(root: HTMLElement, api: Api, ws: WsTransport): void {
     changed();
   });
   ws.onText((m) => {
+    if (m.t === "resync") {
+      // Missed changes: read everything again; a watcher cannot read, so it shows nothing until it can.
+      if (data.ws.kind === "watching") client.reset();
+      else sync.resync();
+      return;
+    }
     if (m.t === "amp") data.amp = m.amp;
     else if (m.t === "update") data.update = m.update;
     else return;

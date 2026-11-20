@@ -45,6 +45,13 @@ export class AmpSync {
     this.onChange();
   }
 
+  /** Updates were missed: read again, even while a read runs (its earlier replies may be stale). */
+  resync(): void {
+    if (!this.live) return;
+    this.gen++;
+    this.read();
+  }
+
   retry(): void {
     if (!this.live || this.reading) return;
     this.gen++;

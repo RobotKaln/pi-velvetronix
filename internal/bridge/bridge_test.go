@@ -295,23 +295,20 @@ func TestRepliesRoutedEchoesShared(t *testing.T) {
 	ack := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x23, 0xF7}
 	gain := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x41, 0x04, 0x00, 0x2D, 0x00, 0xF7}
 
-	if err := c1.Send(0, modeReq); err != nil {
+	nak := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x24, 0xF7}
+	if err := c1.Send(0, gain); err != nil {
 		t.Fatal(err)
 	}
-	if err := c2.Send(0, gain); err != nil {
+	if err := c2.Send(0, modeReq); err != nil {
 		t.Fatal(err)
 	}
-	if f := recv(t, c2.Frames()); !f.Echo || !bytes.Equal(f.Data, modeReq) {
-		t.Errorf("c2 echo = %+v", f)
-	}
-	if f := recv(t, c1.Frames()); !f.Echo || !bytes.Equal(f.Data, gain) {
-		t.Errorf("c1 echo = %+v", f)
-	}
-	if got := recv(t, p.out); !bytes.Equal(got, modeReq) {
+	if got := recv(t, p.out); !bytes.Equal(got, gain) {
 		t.Fatalf("first write % X", got)
 	}
-	// c2's frame waits until c1's request is answered.
+	// Nothing is shown to c2 before the amp confirms, and c2's request waits for the reply.
 	select {
+	case f := <-c2.Frames():
+		t.Fatalf("c2 got %+v before the ACK", f)
 	case got := <-p.out:
 		t.Fatalf("second request written before the reply: % X", got)
 	case <-time.After(50 * time.Millisecond):
@@ -320,17 +317,21 @@ func TestRepliesRoutedEchoesShared(t *testing.T) {
 	if f := recv(t, c1.Frames()); f.Echo || !bytes.Equal(f.Data, ack) {
 		t.Errorf("c1 reply = %+v", f)
 	}
-	if got := recv(t, p.out); !bytes.Equal(got, gain) {
+	if f := recv(t, c2.Frames()); !f.Echo || !bytes.Equal(f.Data, gain) {
+		t.Errorf("c2 echo after ACK = %+v", f)
+	}
+	if got := recv(t, p.out); !bytes.Equal(got, modeReq) {
 		t.Fatalf("second write % X", got)
 	}
-	p.in <- ack
-	if f := recv(t, c2.Frames()); f.Echo || !bytes.Equal(f.Data, ack) {
+	p.in <- nak
+	if f := recv(t, c2.Frames()); f.Echo || !bytes.Equal(f.Data, nak) {
 		t.Errorf("c2 reply = %+v", f)
 	}
+	// A refused frame is not echoed, and c1 does not get c2's reply.
 	select {
 	case f := <-c1.Frames():
-		t.Fatalf("c1 got c2's reply: %+v", f)
-	default:
+		t.Fatalf("c1 got %+v", f)
+	case <-time.After(50 * time.Millisecond):
 	}
 	// A knob turned on the amp goes to everyone.
 	p.in <- gain
@@ -402,6 +403,7 @@ func TestSendChecks(t *testing.T) {
 	if got := recv(t, p.out); !bytes.Equal(got, modeReq) {
 		t.Errorf("written % X", got)
 	}
+	p.in <- []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x42, 0x00, 0x03, 0xF7} // mode data: the next request may go
 
 	write := []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x11, 0x00, 0x03, 0xF7}
 	if err := c.Send(0, write); !errors.Is(err, midi.ErrSaveFlagRequired) {
@@ -447,6 +449,8 @@ func TestQueueFull(t *testing.T) {
 	}
 	<-p.out
 	<-p.out
+	// The writer now waits for the amp's reply before the next request.
+	p.in <- []byte{0xF0, 0x42, 0x30, 0x00, 0x01, 0x34, 0x42, 0x00, 0x03, 0xF7}
 	waitFor(t, func() bool { return c.Send(0, modeReq) == nil })
 }
 
@@ -481,6 +485,11 @@ func TestFramesForwarding(t *testing.T) {
 	waitFor(t, func() bool { return bytes.Contains([]byte(logs.String()), []byte("controller too slow, dropping frame")) })
 	if len(c.Frames()) != frameBufferSize {
 		t.Errorf("buffered %d frames", len(c.Frames()))
+	}
+	select {
+	case <-c.Lost():
+	default:
+		t.Error("dropped frames not signalled")
 	}
 }
 
