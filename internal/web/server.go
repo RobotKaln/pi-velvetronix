@@ -173,6 +173,7 @@ func (s *Server) routes() http.Handler {
 	// GET and DELETE only get 405 (no SSE stream, no sessions) from the MCP server.
 	for _, m := range []string{"POST", "GET", "DELETE"} {
 		mux.Handle(m+" /mcp", s.mcp)
+		mux.Handle(m+" /mcp/{token}", s.mcp)
 	}
 
 	var h http.Handler = http.NewCrossOriginProtection().Handler(mux)

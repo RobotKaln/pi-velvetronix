@@ -165,7 +165,7 @@ Release layout (root-owned, written only by the root updater):
 | GET | `/api/update` | yes | | `UpdateInfo` |
 | POST | `/api/update` | yes | raw body = `.tar.gz` package, `Content-Type: application/gzip` | `202 {"ok":true,"version":"x"}` or `400/409/413 {"error":code}` |
 | POST | `/api/mcp/token` | yes | | `200 {"token":"<base64url 32 random bytes>"}`; replaces the previous MCP token, shown only here |
-| POST | `/mcp` | bearer | JSON-RPC message | §7.1 |
+| POST | `/mcp`, `/mcp/<token>` | bearer or path | JSON-RPC message | §7.1 |
 
 Types:
 
@@ -329,8 +329,9 @@ Lets Claude (or another MCP client) read and set the amp. Stateless Streamable H
   (`Content-Type: application/json`, never an SSE stream); notifications and responses get
   `202` with no body; a batch (JSON array) or invalid JSON gets `400` with a JSON-RPC error.
   No `Mcp-Session-Id`. `GET` and `DELETE /mcp` answer `405`.
-- Auth: `Authorization: Bearer <token>`, the token from `POST /api/mcp/token`; anything else
-  gets `401` with `WWW-Authenticate: Bearer`. The session cookie is not accepted here. A
+- Auth: `Authorization: Bearer <token>`, the token from `POST /api/mcp/token`, or the same token
+  in the path, `/mcp/<token>`, for clients that cannot send headers (claude.ai connectors through
+  the tunnel, `deploy/tunnel/`); anything else gets `401` with `WWW-Authenticate: Bearer`. The session cookie is not accepted here. A
   cross-site browser request is refused by `CrossOriginProtection` (403).
 - Methods: `initialize` (answers the client's `protocolVersion` if it is 2024-11-05,
   2025-03-26 or 2025-06-18, else 2025-06-18; capability `tools`), `ping`, `tools/list`,

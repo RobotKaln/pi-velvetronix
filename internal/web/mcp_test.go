@@ -98,6 +98,13 @@ func TestMCPAuth(t *testing.T) {
 	if resp, _ := rpc(t, h, tok, init); resp.StatusCode != 200 {
 		t.Fatalf("token: %d", resp.StatusCode)
 	}
+	// The token in the path, for clients without headers.
+	for path, want := range map[string]int{"/mcp/" + tok: 200, "/mcp/" + old: 401, "/mcp/x": 401} {
+		resp, err := http.Post(h.ts.URL+path, "application/json", strings.NewReader(init))
+		if err != nil || resp.StatusCode != want {
+			t.Fatalf("%s: %v %v, want %d", path, resp, err, want)
+		}
+	}
 	// A browser page on another site cannot use the endpoint.
 	req, _ := http.NewRequest("POST", h.ts.URL+"/mcp", strings.NewReader(init))
 	req.Header.Set("Authorization", "Bearer "+tok)

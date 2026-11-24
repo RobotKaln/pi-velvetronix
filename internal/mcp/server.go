@@ -86,16 +86,18 @@ const (
 	codeInvalidParams  = -32602
 )
 
-func bearer(r *http.Request) string {
+// token returns the bearer token, or else the one in the path /mcp/{token} (for clients that
+// cannot send headers, e.g. claude.ai connectors through the tunnel).
+func token(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
 		return strings.TrimSpace(h[7:])
 	}
-	return ""
+	return r.PathValue("token")
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !s.cfg.CheckToken(bearer(r)) {
+	if !s.cfg.CheckToken(token(r)) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="pi-velvetronix"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
