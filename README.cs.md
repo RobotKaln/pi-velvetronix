@@ -109,8 +109,12 @@ zapisuje jen `vox_save_program`. Všechno ostatní mění jen živý zvuk.
      --header "Authorization: Bearer <token>"
    ```
 
-Endpoint funguje jen v místní síti (běží přes HTTP). Změna hesla webu token zruší. Podrobnosti
-jsou v [docs/design.md §7.1](docs/design.md).
+Změna hesla webu token zruší. Podrobnosti jsou v [docs/design.md §7.1](docs/design.md).
+
+Mimo místní síť (konektory v claude.ai, aplikace Claude) je endpoint dostupný přes Cloudflare
+Tunnel na adrese `https://vox.kaln.cz/mcp/<token>`. Token je v cestě, protože konektory v claude.ai
+neumí poslat hlavičku. Ven je vystavená jen cesta `/mcp/<token>`. Nastavení je popsané
+v [deploy/tunnel/README.md](deploy/tunnel/README.md) (anglicky).
 
 ## Hardware a zapojení
 

@@ -111,8 +111,12 @@ writes to the amp's memory; everything else changes the live sound.
      --header "Authorization: Bearer <token>"
    ```
 
-The endpoint works only on the local network (plain HTTP). Changing the web password revokes the
-token. Details: [docs/design.md §7.1](docs/design.md).
+Changing the web password revokes the token. Details: [docs/design.md §7.1](docs/design.md).
+
+From outside the local network (claude.ai connectors, the Claude apps) the endpoint is reachable
+through a Cloudflare Tunnel as `https://vox.kaln.cz/mcp/<token>`: the token is in the path because
+claude.ai connectors cannot send headers. Only `/mcp/<token>` is exposed. Setup:
+[deploy/tunnel/README.md](deploy/tunnel/README.md).
 
 ## Hardware and wiring
 
